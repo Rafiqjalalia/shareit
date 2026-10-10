@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { tempFileStore } from '@/lib/storage';
+import { tempFileStore, cleanupExpiredFiles } from '@/lib/storage';
 
 export async function POST(req: NextRequest) {
   try {
+    cleanupExpiredFiles();
+
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const expiryHoursStr = (formData.get('expiryHours') as string) || '1';
@@ -14,6 +16,7 @@ export async function POST(req: NextRequest) {
 
     const fileId = Math.random().toString(36).substring(2, 10);
     const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer).toString('base64');
     const now = Date.now();
     const expiresAt = now + expiryHours * 60 * 60 * 1000;
 
@@ -22,7 +25,7 @@ export async function POST(req: NextRequest) {
       name: file.name,
       size: file.size,
       mimeType: file.type || 'application/octet-stream',
-      buffer: arrayBuffer,
+      buffer: buffer,
       createdAt: now,
       expiresAt: expiresAt,
       downloadCount: 0,

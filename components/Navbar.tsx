@@ -1,12 +1,14 @@
 'use client';
 
 import React from 'react';
-import { Zap, ShieldCheck, Crown, Smartphone, Globe } from 'lucide-react';
+import { Zap, ShieldCheck, Crown, Smartphone, Globe, Send } from 'lucide-react';
 import { TransferMode } from '@/lib/types';
 
+export type ExtendedMode = TransferMode | 'mobile-code';
+
 interface NavbarProps {
-  activeMode: TransferMode;
-  onSelectMode: (mode: TransferMode) => void;
+  activeMode: ExtendedMode;
+  onSelectMode: (mode: ExtendedMode) => void;
   onOpenPremium: () => void;
 }
 
@@ -34,28 +36,40 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Mode Selector Tabs */}
-        <div className="flex items-center bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+        <div className="flex flex-wrap items-center justify-center bg-slate-950/80 p-1 rounded-xl border border-slate-800 gap-1">
           <button
             onClick={() => onSelectMode('p2p')}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
               activeMode === 'p2p'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
             }`}
           >
-            <Smartphone className="w-4 h-4" />
-            Same Wi-Fi (QR Scan)
+            <Smartphone className="w-3.5 h-3.5" />
+            PC (QR View)
+          </button>
+
+          <button
+            onClick={() => onSelectMode('mobile-code')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              activeMode === 'mobile-code'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+            }`}
+          >
+            <Send className="w-3.5 h-3.5 text-emerald-400" />
+            Send to PC (Code)
           </button>
 
           <button
             onClick={() => onSelectMode('temp-cloud')}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
               activeMode === 'temp-cloud'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
             }`}
           >
-            <Globe className="w-4 h-4" />
+            <Globe className="w-3.5 h-3.5" />
             Temp URL Share
           </button>
         </div>
@@ -69,11 +83,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Crown className="w-4 h-4 text-amber-400" />
             Upgrade Premium
           </button>
-
-          <div className="hidden lg:flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            No VPS / Serverless
-          </div>
         </div>
       </div>
     </header>

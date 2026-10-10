@@ -2,10 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { Navbar } from '@/components/Navbar';
+import { Navbar, ExtendedMode } from '@/components/Navbar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { generateRoomId } from '@/lib/webrtc';
-import { TransferMode } from '@/lib/types';
 import { Wifi, Globe, Shield, Sparkles, Loader2 } from 'lucide-react';
 
 // Dynamic No-SSR client imports to guarantee zero Vercel hydration crashes
@@ -35,6 +34,19 @@ const P2PTransfer = dynamic(
   }
 );
 
+const MobileConnectByCode = dynamic(
+  () => import('@/components/MobileConnectByCode').then((mod) => mod.MobileConnectByCode),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="glass-panel p-8 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[350px]">
+        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
+        <p className="text-xs text-slate-400 font-semibold">Loading Mobile Sender...</p>
+      </div>
+    ),
+  }
+);
+
 const TempUpload = dynamic(
   () => import('@/components/TempUpload').then((mod) => mod.TempUpload),
   {
@@ -54,13 +66,25 @@ const PremiumModal = dynamic(
 );
 
 export default function HomePage() {
-  const [activeMode, setActiveMode] = useState<TransferMode>('p2p');
+  const [activeMode, setActiveMode] = useState<ExtendedMode>('p2p');
   const [roomId, setRoomId] = useState<string>('');
   const [isPeerConnected, setIsPeerConnected] = useState<boolean>(false);
   const [isPremiumOpen, setIsPremiumOpen] = useState<boolean>(false);
 
   useEffect(() => {
     setRoomId(generateRoomId());
+
+    // Auto detect if user opened site on mobile phone -> default to Send to PC Code input
+    if (typeof window !== 'undefined') {
+      const isMobile =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent
+        ) || window.innerWidth < 768;
+
+      if (isMobile) {
+        setActiveMode('mobile-code');
+      }
+    }
   }, []);
 
   const handleRefreshRoom = () => {
@@ -89,7 +113,7 @@ export default function HomePage() {
             Instant Mobile to PC File Transfer
           </h1>
           <p className="text-sm md:text-base text-slate-400">
-            Scan QR code to stream files directly over Wi-Fi, or generate temporary expiring share links for remote devices.
+            Scan QR code or enter PC session code to stream files, or generate temporary expiring share links for remote devices.
           </p>
         </div>
 
@@ -125,6 +149,10 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+          ) : activeMode === 'mobile-code' ? (
+            <div className="max-w-md mx-auto">
+              <MobileConnectByCode />
+            </div>
           ) : (
             <div className="max-w-2xl mx-auto">
               <TempUpload onOpenPremium={() => setIsPremiumOpen(true)} />
@@ -139,9 +167,9 @@ export default function HomePage() {
               <Wifi className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-white">Direct P2P Wi-Fi</h4>
+              <h4 className="text-xs font-bold text-white">Direct P2P Stream</h4>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Files transfer browser-to-browser. Maximum Wi-Fi transfer speed with zero server upload time.
+                Files stream browser-to-browser via QR scan or 6-digit session code at maximum Wi-Fi bandwidth speed.
               </p>
             </div>
           </div>
@@ -153,7 +181,7 @@ export default function HomePage() {
             <div>
               <h4 className="text-xs font-bold text-white">Temporary Cloud Share</h4>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Share files across remote locations using Cloudflare R2 / Serverless storage with auto-expiration.
+                Share files across remote locations using Serverless storage with auto-expiration timers.
               </p>
             </div>
           </div>

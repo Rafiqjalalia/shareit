@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { tempFileStore } from '@/lib/storage';
+import { tempFileStore, cleanupExpiredFiles } from '@/lib/storage';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { fileId: string } }
 ) {
+  cleanupExpiredFiles();
   const { fileId } = params;
   const item = tempFileStore.get(fileId);
 
@@ -19,9 +20,9 @@ export async function GET(
   }
 
   item.downloadCount += 1;
+  const fileBuffer = Buffer.from(item.buffer, 'base64');
 
-  // Stream file response with proper headers
-  return new NextResponse(item.buffer, {
+  return new NextResponse(fileBuffer, {
     headers: {
       'Content-Type': item.mimeType,
       'Content-Disposition': `attachment; filename="${encodeURIComponent(item.name)}"`,
@@ -34,6 +35,7 @@ export async function HEAD(
   req: NextRequest,
   { params }: { params: { fileId: string } }
 ) {
+  cleanupExpiredFiles();
   const { fileId } = params;
   const item = tempFileStore.get(fileId);
 
