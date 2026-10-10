@@ -31,6 +31,7 @@ export const P2PTransfer: React.FC<P2PTransferProps> = ({
   roomId,
   onConnectionChange,
 }) => {
+  const [mounted, setMounted] = useState(false);
   const [peerStatus, setPeerStatus] = useState<string>('Initializing WebRTC...');
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [progress, setProgress] = useState<TransferProgress | null>(null);
@@ -52,12 +53,14 @@ export const P2PTransfer: React.FC<P2PTransferProps> = ({
   const startTimeRef = useRef<number>(0);
 
   useEffect(() => {
+    setMounted(true);
     let peerInstance: Peer | null = null;
 
     const initPeer = async () => {
+      if (typeof window === 'undefined') return;
+
       try {
         const { default: Peer } = await import('peerjs');
-        // Standard room peer prefix for unique isolation
         const peerId = `shaeit-pc-${roomId}`;
         peerInstance = new Peer(peerId, {
           debug: 1,
@@ -108,7 +111,7 @@ export const P2PTransfer: React.FC<P2PTransferProps> = ({
       }
     };
 
-    initPeer();
+    if (roomId) initPeer();
 
     return () => {
       if (connRef.current) connRef.current.close();
@@ -164,7 +167,11 @@ export const P2PTransfer: React.FC<P2PTransferProps> = ({
       const blob = new Blob(incomingChunksRef.current, {
         type: header.mimeType || 'application/octet-stream',
       });
-      const blobUrl = URL.createObjectURL(blob);
+
+      let blobUrl = '';
+      if (typeof window !== 'undefined' && window.URL) {
+        blobUrl = URL.createObjectURL(blob);
+      }
 
       // Auto trigger browser download
       triggerFileDownload(blob, header.name);
@@ -196,6 +203,15 @@ export const P2PTransfer: React.FC<P2PTransferProps> = ({
       incomingChunksRef.current = [];
     }
   };
+
+  if (!mounted) {
+    return (
+      <div className="glass-panel p-6 rounded-2xl border border-slate-800 flex flex-col items-center justify-center min-h-[420px]">
+        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-2" />
+        <p className="text-xs text-slate-400">Loading Receiver Interface...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="glass-panel p-6 rounded-2xl border border-slate-800 flex flex-col justify-between min-h-[420px]">
@@ -304,14 +320,16 @@ export const P2PTransfer: React.FC<P2PTransferProps> = ({
                     </div>
                   </div>
 
-                  <a
-                    href={file.blobUrl}
-                    download={file.name}
-                    className="p-2 text-indigo-400 hover:text-white hover:bg-indigo-600 rounded-lg transition-all"
-                    title="Download again"
-                  >
-                    <Download className="w-4 h-4" />
-                  </a>
+                  {file.blobUrl && (
+                    <a
+                      href={file.blobUrl}
+                      download={file.name}
+                      className="p-2 text-indigo-400 hover:text-white hover:bg-indigo-600 rounded-lg transition-all"
+                      title="Download again"
+                    >
+                      <Download className="w-4 h-4" />
+                    </a>
+                  )}
                 </div>
               ))}
             </div>

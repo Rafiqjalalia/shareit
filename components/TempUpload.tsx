@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { formatBytes } from '@/lib/webrtc';
 import { FREE_TIER_LIMITS } from '@/lib/types';
+import { getAppBaseUrl } from '@/lib/config';
 import {
   Globe,
   Clock,
@@ -21,12 +22,17 @@ interface TempUploadProps {
 }
 
 export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
+  const [mounted, setMounted] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [expiryHours, setExpiryHours] = useState<number>(1);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -69,8 +75,8 @@ export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
         throw new Error(data.error || 'Upload failed');
       }
 
-      const origin = window.location.origin;
-      const generatedUrl = `${origin}/share/${data.fileId}`;
+      const base = getAppBaseUrl();
+      const generatedUrl = `${base}/share/${data.fileId}`;
       setShareUrl(generatedUrl);
     } catch (err: any) {
       setErrorMessage(err.message || 'Upload error occurred');
@@ -81,10 +87,21 @@ export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
 
   const copyUrl = () => {
     if (!shareUrl) return;
-    navigator.clipboard.writeText(shareUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
+
+  if (!mounted) {
+    return (
+      <div className="glass-panel p-6 rounded-2xl border border-slate-800 flex flex-col items-center justify-center min-h-[420px]">
+        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-2" />
+        <p className="text-xs text-slate-400">Loading Cloud Uploader...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="glass-panel p-6 rounded-2xl border border-slate-800 flex flex-col justify-between min-h-[420px]">

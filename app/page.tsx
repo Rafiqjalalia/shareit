@@ -1,14 +1,57 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { Navbar } from '@/components/Navbar';
-import { QrCodeDisplay } from '@/components/QrCodeDisplay';
-import { P2PTransfer } from '@/components/P2PTransfer';
-import { TempUpload } from '@/components/TempUpload';
-import { PremiumModal } from '@/components/PremiumModal';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { generateRoomId } from '@/lib/webrtc';
 import { TransferMode } from '@/lib/types';
-import { Wifi, Globe, Shield, Sparkles, Smartphone, ArrowRight } from 'lucide-react';
+import { Wifi, Globe, Shield, Sparkles, Loader2 } from 'lucide-react';
+
+// Dynamic No-SSR client imports to guarantee zero Vercel hydration crashes
+const QrCodeDisplay = dynamic(
+  () => import('@/components/QrCodeDisplay').then((mod) => mod.QrCodeDisplay),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="glass-panel p-8 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[350px]">
+        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
+        <p className="text-xs text-slate-400 font-semibold">Generating QR Code...</p>
+      </div>
+    ),
+  }
+);
+
+const P2PTransfer = dynamic(
+  () => import('@/components/P2PTransfer').then((mod) => mod.P2PTransfer),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="glass-panel p-8 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[350px]">
+        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
+        <p className="text-xs text-slate-400 font-semibold">Loading Receiver HUD...</p>
+      </div>
+    ),
+  }
+);
+
+const TempUpload = dynamic(
+  () => import('@/components/TempUpload').then((mod) => mod.TempUpload),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="glass-panel p-8 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[350px]">
+        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
+        <p className="text-xs text-slate-400 font-semibold">Loading Cloud Share Uploader...</p>
+      </div>
+    ),
+  }
+);
+
+const PremiumModal = dynamic(
+  () => import('@/components/PremiumModal').then((mod) => mod.PremiumModal),
+  { ssr: false }
+);
 
 export default function HomePage() {
   const [activeMode, setActiveMode] = useState<TransferMode>('p2p');
@@ -26,7 +69,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-between">
+    <div className="min-h-screen flex flex-col justify-between bg-slate-950 text-slate-100">
       {/* Navigation Header */}
       <Navbar
         activeMode={activeMode}
@@ -50,37 +93,44 @@ export default function HomePage() {
           </p>
         </div>
 
-        {/* Dynamic Mode Content */}
-        {activeMode === 'p2p' ? (
-          <div className="space-y-6">
-            <div className="grid lg:grid-cols-12 gap-6 items-stretch">
-              {/* Left Column: QR Code Display */}
-              <div className="lg:col-span-5">
-                {roomId && (
-                  <QrCodeDisplay
-                    roomId={roomId}
-                    isPeerConnected={isPeerConnected}
-                    onRefreshRoom={handleRefreshRoom}
-                  />
-                )}
-              </div>
+        {/* Dynamic Mode Content Wrapped in ErrorBoundary */}
+        <ErrorBoundary fallbackTitle="Module Loading Error">
+          {activeMode === 'p2p' ? (
+            <div className="space-y-6">
+              <div className="grid lg:grid-cols-12 gap-6 items-stretch">
+                {/* Left Column: QR Code Display */}
+                <div className="lg:col-span-5">
+                  {roomId ? (
+                    <QrCodeDisplay
+                      roomId={roomId}
+                      isPeerConnected={isPeerConnected}
+                      onRefreshRoom={handleRefreshRoom}
+                    />
+                  ) : (
+                    <div className="glass-panel p-8 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[350px]">
+                      <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
+                      <p className="text-xs text-slate-400">Generating Session ID...</p>
+                    </div>
+                  )}
+                </div>
 
-              {/* Right Column: WebRTC Data Receiver */}
-              <div className="lg:col-span-7">
-                {roomId && (
-                  <P2PTransfer
-                    roomId={roomId}
-                    onConnectionChange={setIsPeerConnected}
-                  />
-                )}
+                {/* Right Column: WebRTC Data Receiver */}
+                <div className="lg:col-span-7">
+                  {roomId && (
+                    <P2PTransfer
+                      roomId={roomId}
+                      onConnectionChange={setIsPeerConnected}
+                    />
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="max-w-2xl mx-auto">
-            <TempUpload onOpenPremium={() => setIsPremiumOpen(true)} />
-          </div>
-        )}
+          ) : (
+            <div className="max-w-2xl mx-auto">
+              <TempUpload onOpenPremium={() => setIsPremiumOpen(true)} />
+            </div>
+          )}
+        </ErrorBoundary>
 
         {/* Feature Highlights Grid */}
         <div className="grid md:grid-cols-3 gap-4 pt-6 border-t border-slate-800/80">
@@ -140,10 +190,12 @@ export default function HomePage() {
       </footer>
 
       {/* Premium Upgrade Modal */}
-      <PremiumModal
-        isOpen={isPremiumOpen}
-        onClose={() => setIsPremiumOpen(false)}
-      />
+      <ErrorBoundary>
+        <PremiumModal
+          isOpen={isPremiumOpen}
+          onClose={() => setIsPremiumOpen(false)}
+        />
+      </ErrorBoundary>
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Copy, Check, QrCode, RefreshCw, Radio, Globe } from 'lucide-react';
+import { getAppBaseUrl } from '@/lib/config';
 
 interface QrCodeDisplayProps {
   roomId: string;
@@ -17,8 +18,8 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [hostOrigin, setHostOrigin] = useState<string>('http://localhost:3000');
-  const [customIp, setCustomIp] = useState<string>('http://localhost:3000');
+  const [hostOrigin, setHostOrigin] = useState<string>('');
+  const [customIp, setCustomIp] = useState<string>('');
 
   useEffect(() => {
     setMounted(true);
@@ -30,7 +31,7 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
       const port = window.location.port ? `:${window.location.port}` : '';
       const protocol = window.location.protocol;
 
-      // If running on local dev, try to auto detect LAN IP
+      // If running on local dev (localhost), try to detect local LAN IP
       if (hostname === 'localhost' || hostname === '127.0.0.1') {
         try {
           const res = await fetch('/api/network-ip');
@@ -46,20 +47,23 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
         }
       }
 
-      // Default to dynamic window origin (Works on Vercel, Netlify & Custom domains)
-      setHostOrigin(window.location.origin);
-      setCustomIp(window.location.origin);
+      // Safe production URL resolution (Vercel / Cloud / Window origin)
+      const base = getAppBaseUrl();
+      setHostOrigin(base);
+      setCustomIp(base);
     };
 
     detectIp();
   }, []);
 
-  const pairUrl = `${hostOrigin}/mobile/${roomId}`;
+  const pairUrl = hostOrigin ? `${hostOrigin}/mobile/${roomId}` : '';
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(pairUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (typeof navigator !== 'undefined' && navigator.clipboard && pairUrl) {
+      navigator.clipboard.writeText(pairUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const handleUrlChange = (newUrl: string) => {
@@ -71,11 +75,11 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
     setHostOrigin(formatted);
   };
 
-  if (!mounted) {
+  if (!mounted || !pairUrl) {
     return (
       <div className="flex flex-col items-center justify-center p-8 glass-panel rounded-2xl border border-slate-800 text-center min-h-[350px]">
         <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-3" />
-        <p className="text-xs text-slate-400 font-semibold">Generating QR Code...</p>
+        <p className="text-xs text-slate-400 font-semibold">Generating QR Pairing Code...</p>
       </div>
     );
   }
