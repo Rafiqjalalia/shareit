@@ -17,12 +17,8 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [hostOrigin, setHostOrigin] = useState<string>(
-    'https://e9cb820b7dc83654-103-167-158-148.serveousercontent.com'
-  );
-  const [customIp, setCustomIp] = useState<string>(
-    'https://e9cb820b7dc83654-103-167-158-148.serveousercontent.com'
-  );
+  const [hostOrigin, setHostOrigin] = useState<string>('http://localhost:3000');
+  const [customIp, setCustomIp] = useState<string>('http://localhost:3000');
 
   useEffect(() => {
     setMounted(true);
@@ -31,14 +27,26 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
       if (typeof window === 'undefined') return;
 
       const hostname = window.location.hostname;
+      const port = window.location.port ? `:${window.location.port}` : '';
+      const protocol = window.location.protocol;
 
+      // If running on local dev, try to auto detect LAN IP
       if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        // Keep active live HTTPS tunnel default
-        setHostOrigin('https://e9cb820b7dc83654-103-167-158-148.serveousercontent.com');
-        setCustomIp('https://e9cb820b7dc83654-103-167-158-148.serveousercontent.com');
-        return;
+        try {
+          const res = await fetch('/api/network-ip');
+          const data = await res.json();
+          if (data.ip && data.ip !== 'localhost') {
+            const detected = `${protocol}//${data.ip}${port}`;
+            setHostOrigin(detected);
+            setCustomIp(detected);
+            return;
+          }
+        } catch (err) {
+          console.warn('Could not auto-detect network IP:', err);
+        }
       }
 
+      // Default to dynamic window origin (Works on Vercel, Netlify & Custom domains)
       setHostOrigin(window.location.origin);
       setCustomIp(window.location.origin);
     };
@@ -134,7 +142,7 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
           <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-300">
             <span className="flex items-center gap-1">
               <Globe className="w-3.5 h-3.5 text-indigo-400" />
-              Public Mobile HTTPS URL:
+              Target Host URL / IP:
             </span>
           </div>
           <input
