@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveStoredFile } from '@/lib/storage';
+import { resolveStoredFile, getDirectDownloadUrl } from '@/lib/storage';
 
 export async function GET(
   req: NextRequest,
@@ -21,7 +21,8 @@ export async function GET(
   // Stream from persistent remote temporary storage
   if (item.remoteUrl) {
     try {
-      const remoteRes = await fetch(item.remoteUrl);
+      const directUrl = await getDirectDownloadUrl(item.remoteUrl);
+      const remoteRes = await fetch(directUrl);
       if (remoteRes.ok && remoteRes.body) {
         return new NextResponse(remoteRes.body, {
           headers: {

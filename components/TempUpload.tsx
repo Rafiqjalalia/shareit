@@ -60,23 +60,80 @@ export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
     setErrorMessage(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('expiryHours', expiryHours.toString());
+      let fileId = '';
 
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      // For files > 3.5MB, upload directly to cloud storage to bypass Vercel's 4.5MB serverless limit
+      if (selectedFile.size > 3.5 * 1024 * 1024) {
+        try {
+          const directForm = new FormData();
+          directForm.append('file', selectedFile);
+          directForm.append('expire', (expiryHours * 3600).toString());
 
-      const data = await res.json();
+          const directRes = await fetch('https://tmpfiles.org/api/v1/upload', {
+            method: 'POST',
+            body: directForm,
+          });
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Upload failed');
+          if (directRes.ok) {
+            const directData = await directRes.json();
+            if (directData.status === 'success' && directData.data?.url) {
+              // Send lightweight metadata to /api/upload (~200 bytes, safe for serverless)
+              const metaRes = await fetch('/api/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  remoteUrl: directData.data.url,
+                  name: selectedFile.name,
+                  size: selectedFile.size,
+                  mimeType: selectedFile.type || 'application/octet-stream',
+                  expiryHours,
+                }),
+              });
+
+              if (metaRes.ok) {
+                const metaData = await metaRes.json();
+                fileId = metaData.fileId;
+              }
+            }
+          }
+        } catch (directErr) {
+          console.warn('Direct cloud upload failed, attempting standard upload:', directErr);
+        }
+      }
+
+      // If not uploaded yet (small files or fallback):
+      if (!fileId) {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('expiryHours', expiryHours.toString());
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (res.status === 413) {
+          throw new Error('File exceeds the Vercel serverless upload limit (4.5MB). Please use Same Wi-Fi P2P mode for large files!');
+        }
+
+        const contentType = res.headers.get('content-type') || '';
+        let data: any = {};
+        if (contentType.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const text = await res.text();
+          throw new Error(text || 'Upload failed');
+        }
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Upload failed');
+        }
+
+        fileId = data.fileId;
       }
 
       const base = getAppBaseUrl();
-      const generatedUrl = `${base}/share/${data.fileId}`;
+      const generatedUrl = `${base}/share/${fileId}`;
       setShareUrl(generatedUrl);
     } catch (err: any) {
       setErrorMessage(err.message || 'Upload error occurred');

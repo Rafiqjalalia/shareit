@@ -31,8 +31,69 @@ export function cleanupExpiredFiles() {
 }
 
 /**
+ * Resolves direct file download stream URL from cloud storage providers (handling any redirects or landing pages).
+ */
+export async function getDirectDownloadUrl(remoteUrl: string): Promise<string> {
+  if (remoteUrl.includes('tmpfiles.org/')) {
+    try {
+      const dlPageUrl = remoteUrl.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+      const res = await fetch(dlPageUrl, { redirect: 'follow' });
+      const html = await res.text();
+      const match = html.match(/href="(https:\/\/tmpfiles\.org\/dl\/[^"]+)"/);
+      if (match && match[1]) {
+        return match[1];
+      }
+    } catch (err) {
+      console.warn('Failed to resolve tmpfiles direct link:', err);
+    }
+  }
+  return remoteUrl;
+}
+
+/**
+ * Saves a file reference from a direct client upload to the persistent serverless store.
+ */
+export function saveRemoteTempFile(params: {
+  remoteUrl: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  expiryHours: number;
+}): { fileId: string; fileInfo: StoredTempFile } {
+  cleanupExpiredFiles();
+
+  const now = Date.now();
+  const expiresAt = now + params.expiryHours * 60 * 60 * 1000;
+
+  const tokenPayload = {
+    u: params.remoteUrl,
+    n: params.name,
+    s: params.size,
+    m: params.mimeType || 'application/octet-stream',
+    e: expiresAt,
+    c: now,
+  };
+
+  const fileId = Buffer.from(JSON.stringify(tokenPayload)).toString('base64url');
+
+  const storedItem: StoredTempFile = {
+    id: fileId,
+    name: params.name,
+    size: params.size,
+    mimeType: params.mimeType,
+    remoteUrl: params.remoteUrl,
+    createdAt: now,
+    expiresAt,
+    downloadCount: 0,
+  };
+
+  tempFileStore.set(fileId, storedItem);
+
+  return { fileId, fileInfo: storedItem };
+}
+
+/**
  * Uploads a file to temporary serverless storage and returns a self-contained persistent fileId.
- * This guarantees the link never expires before the chosen time even when serverless containers cold-restart.
  */
 export async function saveTempFile(
   file: File,
@@ -44,7 +105,7 @@ export async function saveTempFile(
   const expiresAt = now + expiryHours * 60 * 60 * 1000;
   let remoteUrl: string | undefined = undefined;
 
-  // 1. Try uploading to high-speed temporary storage (Uguu / temporary storage backend)
+  // 1. Try uploading to high-speed temporary storage (Uguu)
   try {
     const arrayBuffer = await file.arrayBuffer();
     const blob = new Blob([arrayBuffer], { type: file.type || 'application/octet-stream' });
@@ -66,10 +127,34 @@ export async function saveTempFile(
     console.warn('Temporary cloud backend upload failed, falling back to memory store:', err);
   }
 
-  // 2. Generate fileId
+  // 2. Fallback to tmpfiles if Uguu fails
+  if (!remoteUrl) {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: file.type || 'application/octet-stream' });
+      const formData = new FormData();
+      formData.append('file', blob, file.name);
+      formData.append('expire', (expiryHours * 3600).toString());
+
+      const uploadRes = await fetch('https://tmpfiles.org/api/v1/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (uploadRes.ok) {
+        const data = await uploadRes.json();
+        if (data.status === 'success' && data.data?.url) {
+          remoteUrl = data.data.url;
+        }
+      }
+    } catch (err) {
+      console.warn('tmpfiles fallback upload failed:', err);
+    }
+  }
+
+  // 3. Generate fileId
   let fileId = '';
   if (remoteUrl) {
-    // Encode storage pointer and metadata into a secure, compact URL-safe token
     const tokenPayload = {
       u: remoteUrl,
       n: file.name,
