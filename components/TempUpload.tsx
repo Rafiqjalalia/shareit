@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { formatBytes } from '@/lib/webrtc';
 import { FREE_TIER_LIMITS } from '@/lib/types';
 import { getAppBaseUrl } from '@/lib/config';
+import { MyLinks, saveCreatedLinkToStorage } from '@/components/MyLinks';
 import {
   Globe,
   Clock,
@@ -41,7 +42,7 @@ export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
 
       if (file.size > maxSizeBytes) {
         setErrorMessage(
-          `File exceeds Free Cloud limit of ${FREE_TIER_LIMITS.maxTempFileSizeMB}MB. Use Same Wi-Fi P2P mode for large files or upgrade to Premium!`
+          `File exceeds Cloud Share limit of ${FREE_TIER_LIMITS.maxTempFileSizeMB}MB. For larger files, please use Direct P2P mode!`
         );
         setSelectedFile(null);
         return;
@@ -61,6 +62,8 @@ export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
 
     try {
       let fileId = '';
+      let ownerToken = '';
+      let fileExpiresAt = Date.now() + expiryHours * 3600 * 1000;
 
       // For files > 3.5MB, upload directly to cloud storage to bypass Vercel's 4.5MB serverless limit
       if (selectedFile.size > 3.5 * 1024 * 1024) {
@@ -93,6 +96,8 @@ export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
               if (metaRes.ok) {
                 const metaData = await metaRes.json();
                 fileId = metaData.fileId;
+                ownerToken = metaData.ownerToken || '';
+                if (metaData.expiresAt) fileExpiresAt = metaData.expiresAt;
               }
             }
           }
@@ -130,11 +135,25 @@ export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
         }
 
         fileId = data.fileId;
+        ownerToken = data.ownerToken || '';
+        if (data.expiresAt) fileExpiresAt = data.expiresAt;
       }
 
       const base = getAppBaseUrl();
       const generatedUrl = `${base}/share/${fileId}`;
       setShareUrl(generatedUrl);
+
+      if (ownerToken) {
+        saveCreatedLinkToStorage({
+          id: fileId,
+          ownerToken,
+          name: selectedFile.name,
+          size: selectedFile.size,
+          expiresAt: fileExpiresAt,
+          createdAt: Date.now(),
+          url: generatedUrl,
+        });
+      }
     } catch (err: any) {
       setErrorMessage(err.message || 'Upload error occurred');
     } finally {
@@ -161,8 +180,9 @@ export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
   }
 
   return (
-    <div className="glass-panel p-6 rounded-2xl border border-slate-800 flex flex-col justify-between min-h-[420px]">
-      <div>
+    <div className="space-y-6">
+      <div className="glass-panel p-6 rounded-2xl border border-slate-800 flex flex-col justify-between min-h-[420px]">
+        <div>
         <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-400">
@@ -180,14 +200,8 @@ export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
         </div>
 
         {errorMessage && (
-          <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl mb-4 text-xs text-rose-400 flex items-center justify-between">
-            <span>{errorMessage}</span>
-            <button
-              onClick={onOpenPremium}
-              className="text-amber-400 font-bold underline shrink-0 ml-2"
-            >
-              Upgrade
-            </button>
+          <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl mb-4 text-xs text-rose-400">
+            {errorMessage}
           </div>
         )}
 
@@ -207,7 +221,7 @@ export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
             <p className="text-xs text-slate-400 mt-1">
               {selectedFile
                 ? `${formatBytes(selectedFile.size)} ready`
-                : 'Free tier limit: 100MB • Any file type'}
+                : 'Cloud limit: 100MB • For large files use P2P Wi-Fi transfer'}
             </p>
           </div>
         </div>
@@ -300,13 +314,14 @@ export const TempUpload: React.FC<TempUploadProps> = ({ onOpenPremium }) => {
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
           Serverless Auto-Cleanup
         </span>
-        <button
-          onClick={onOpenPremium}
-          className="text-amber-400 hover:underline font-semibold"
-        >
-          Need up to 5GB & 7-Day Storage?
-        </button>
+        <span className="text-slate-500 text-[11px]">
+          Files auto-delete when timer expires
+        </span>
       </div>
     </div>
+
+    {/* Live Activity & My Links Section */}
+    <MyLinks onOpenPremium={onOpenPremium} />
+  </div>
   );
 };

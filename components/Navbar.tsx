@@ -1,21 +1,20 @@
 'use client';
 
 import React from 'react';
-import { Zap, ShieldCheck, Crown, Smartphone, Globe, Send } from 'lucide-react';
+import { Zap, ShieldCheck, Smartphone, Globe, Send, Clipboard } from 'lucide-react';
 import { TransferMode } from '@/lib/types';
 
-export type ExtendedMode = TransferMode | 'mobile-code';
+export type ExtendedMode = TransferMode | 'mobile-code' | 'quick-paste';
 
 interface NavbarProps {
   activeMode: ExtendedMode;
   onSelectMode: (mode: ExtendedMode) => void;
-  onOpenPremium: () => void;
+  onOpenPremium?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeMode,
   onSelectMode,
-  onOpenPremium,
 }) => {
   return (
     <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40">
@@ -62,6 +61,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
+            onClick={() => onSelectMode('quick-paste')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              activeMode === 'quick-paste'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+            }`}
+          >
+            <Clipboard className="w-3.5 h-3.5 text-amber-400" />
+            Quick Paste
+          </button>
+
+          <button
             onClick={() => onSelectMode('temp-cloud')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
               activeMode === 'temp-cloud'
@@ -74,15 +85,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </div>
 
-        {/* Action Controls & Premium */}
+        {/* Status Badge */}
         <div className="flex items-center gap-3">
-          <button
-            onClick={onOpenPremium}
-            className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg hover:bg-amber-500/20 transition-all shadow-sm"
-          >
-            <Crown className="w-4 h-4 text-amber-400" />
-            Upgrade Premium
-          </button>
+          <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>100% Free & Private</span>
+          </span>
         </div>
       </div>
     </header>

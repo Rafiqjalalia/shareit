@@ -7,21 +7,38 @@ import { QrCodeDisplay } from '@/components/QrCodeDisplay';
 import { P2PTransfer } from '@/components/P2PTransfer';
 import { MobileConnectByCode } from '@/components/MobileConnectByCode';
 import { TempUpload } from '@/components/TempUpload';
-import { PremiumModal } from '@/components/PremiumModal';
+import { QuickPastePC } from '@/components/QuickPastePC';
 import { generateRoomId } from '@/lib/webrtc';
-import { Wifi, Globe, Shield, Sparkles, Loader2 } from 'lucide-react';
+import { Wifi, Globe, Shield, Sparkles } from 'lucide-react';
 
 export default function HomePage() {
   const [activeMode, setActiveMode] = useState<ExtendedMode>('p2p');
   const [roomId, setRoomId] = useState<string>('');
   const [isPeerConnected, setIsPeerConnected] = useState<boolean>(false);
-  const [isPremiumOpen, setIsPremiumOpen] = useState<boolean>(false);
+  const [mounted, setMounted] = useState<boolean>(false);
 
   useEffect(() => {
-    setRoomId(generateRoomId());
+    setMounted(true);
+    setRoomId((prev) => prev || generateRoomId());
 
-    // Auto detect if user opened site on mobile phone -> default to Send to PC Code input
     if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const modeParam = params.get('mode');
+
+      if (modeParam === 'quick-paste') {
+        setActiveMode('quick-paste');
+        return;
+      }
+      if (modeParam === 'temp-cloud') {
+        setActiveMode('temp-cloud');
+        return;
+      }
+      if (modeParam === 'p2p') {
+        setActiveMode('p2p');
+        return;
+      }
+
+      // Auto detect if user opened site on mobile phone -> default to Send to PC Code input
       const isMobile =
         /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
           navigator.userAgent
@@ -38,13 +55,14 @@ export default function HomePage() {
     setIsPeerConnected(false);
   };
 
+  const activeRoomId = roomId || (mounted ? generateRoomId() : '');
+
   return (
     <div className="min-h-screen flex flex-col justify-between bg-slate-950 text-slate-100">
       {/* Navigation Header */}
       <Navbar
         activeMode={activeMode}
         onSelectMode={setActiveMode}
-        onOpenPremium={() => setIsPremiumOpen(true)}
       />
 
       {/* Main Body */}
@@ -70,25 +88,18 @@ export default function HomePage() {
               <div className="grid lg:grid-cols-12 gap-6 items-stretch">
                 {/* Left Column: QR Code Display */}
                 <div className="lg:col-span-5">
-                  {roomId ? (
-                    <QrCodeDisplay
-                      roomId={roomId}
-                      isPeerConnected={isPeerConnected}
-                      onRefreshRoom={handleRefreshRoom}
-                    />
-                  ) : (
-                    <div className="glass-panel p-8 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[350px]">
-                      <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
-                      <p className="text-xs text-slate-400">Generating Session ID...</p>
-                    </div>
-                  )}
+                  <QrCodeDisplay
+                    roomId={activeRoomId}
+                    isPeerConnected={isPeerConnected}
+                    onRefreshRoom={handleRefreshRoom}
+                  />
                 </div>
 
                 {/* Right Column: WebRTC Data Receiver */}
                 <div className="lg:col-span-7">
-                  {roomId && (
+                  {activeRoomId && (
                     <P2PTransfer
-                      roomId={roomId}
+                      roomId={activeRoomId}
                       onConnectionChange={setIsPeerConnected}
                     />
                   )}
@@ -99,9 +110,13 @@ export default function HomePage() {
             <div className="max-w-md mx-auto">
               <MobileConnectByCode />
             </div>
+          ) : activeMode === 'quick-paste' ? (
+            <div className="max-w-5xl mx-auto">
+              <QuickPastePC />
+            </div>
           ) : (
             <div className="max-w-2xl mx-auto">
-              <TempUpload onOpenPremium={() => setIsPremiumOpen(true)} />
+              <TempUpload onOpenPremium={() => {}} />
             </div>
           )}
         </ErrorBoundary>
@@ -133,13 +148,13 @@ export default function HomePage() {
           </div>
 
           <div className="p-4 bg-slate-900/40 rounded-xl border border-slate-800/80 flex items-start gap-3">
-            <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg shrink-0">
+            <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg shrink-0">
               <Shield className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-white">Premium Monetization</h4>
+              <h4 className="text-xs font-bold text-white">Private & Ephemeral</h4>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Ready to monetize with limits on free file size and retention, giving users reason to upgrade.
+                Direct browser-to-browser streaming and auto-expiring links. Zero permanent logs, no personal data saved.
               </p>
             </div>
           </div>
@@ -153,23 +168,10 @@ export default function HomePage() {
           <div className="flex items-center gap-4">
             <span className="text-emerald-400 font-semibold">Zero VPS Server Requirement</span>
             <span>•</span>
-            <button
-              onClick={() => setIsPremiumOpen(true)}
-              className="text-amber-400 hover:underline font-semibold"
-            >
-              View Premium Features
-            </button>
+            <span className="text-slate-400">100% Free & Open</span>
           </div>
         </div>
       </footer>
-
-      {/* Premium Upgrade Modal */}
-      <ErrorBoundary>
-        <PremiumModal
-          isOpen={isPremiumOpen}
-          onClose={() => setIsPremiumOpen(false)}
-        />
-      </ErrorBoundary>
     </div>
   );
 }

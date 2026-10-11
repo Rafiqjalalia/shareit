@@ -66,7 +66,16 @@ export default function MobileSenderPage() {
 
           connRef.current = conn;
 
+          const searchTimeout = setTimeout(() => {
+            if (!conn.open && !isCancelled) {
+              setErrorMessage(
+                `Taking longer to link. Ensure your PC screen displays code ${roomId}. (Tip: If devices are on different networks, use Temp Cloud Share).`
+              );
+            }
+          }, 7000);
+
           conn.on('open', () => {
+            clearTimeout(searchTimeout);
             if (isCancelled) return;
             setIsConnected(true);
             setStatus('Connected to PC!');
@@ -116,7 +125,7 @@ export default function MobileSenderPage() {
 
       if (file.size > maxSizeBytes) {
         setErrorMessage(
-          `File size exceeds Free limit of ${FREE_TIER_LIMITS.maxP2PFileSizeMB}MB. Upgrade to Premium for larger files!`
+          `File size exceeds transfer limit of ${FREE_TIER_LIMITS.maxP2PFileSizeMB}MB.`
         );
         setSelectedFile(null);
         return;

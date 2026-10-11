@@ -81,7 +81,36 @@ export default function ShareDownloadPage() {
     };
 
     checkFile();
+
+    // Track link open (ignore repeated opens from the same browser within 10 minutes)
+    if (typeof window !== 'undefined') {
+      try {
+        const openedKey = `shaeit_opened_${fileId}`;
+        const lastOpened = localStorage.getItem(openedKey);
+        const now = Date.now();
+        const TEN_MINUTES_MS = 10 * 60 * 1000;
+
+        if (!lastOpened || now - parseInt(lastOpened, 10) > TEN_MINUTES_MS) {
+          fetch('/api/track', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileId, event: 'open' }),
+          }).catch(() => {});
+          localStorage.setItem(openedKey, now.toString());
+        }
+      } catch {
+        // Storage access fallback
+      }
+    }
   }, [fileId]);
+
+  const handleDownloadClick = () => {
+    fetch('/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileId, event: 'download' }),
+    }).catch(() => {});
+  };
 
   const getTimeRemaining = () => {
     if (!fileInfo.expiresAt) return 'Temporary link with auto-deletion';
@@ -157,11 +186,17 @@ export default function ShareDownloadPage() {
               <a
                 href={`/api/share/${fileId}`}
                 download
+                onClick={handleDownloadClick}
                 className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
                 <HardDriveDownload className="w-5 h-5" />
                 Download File Now ({formatBytes(fileInfo.size || 0)})
               </a>
+
+              <p className="text-[11px] text-slate-500 flex items-center justify-center gap-1.5 pt-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>We only count opens, nothing personal is saved.</span>
+              </p>
             </div>
           )}
         </div>

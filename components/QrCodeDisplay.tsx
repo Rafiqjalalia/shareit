@@ -24,39 +24,43 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
   useEffect(() => {
     setMounted(true);
 
-    const detectIp = async () => {
-      if (typeof window === 'undefined') return;
+    if (typeof window !== 'undefined') {
+      const immediateOrigin = window.location.origin || getAppBaseUrl();
+      setHostOrigin(immediateOrigin);
+      setCustomIp(immediateOrigin);
 
-      const hostname = window.location.hostname;
-      const port = window.location.port ? `:${window.location.port}` : '';
-      const protocol = window.location.protocol;
+      const detectIp = async () => {
+        const hostname = window.location.hostname;
+        const port = window.location.port ? `:${window.location.port}` : '';
+        const protocol = window.location.protocol;
 
-      // If running on local dev (localhost), try to detect local LAN IP
-      if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        try {
-          const res = await fetch('/api/network-ip');
-          const data = await res.json();
-          if (data.ip && data.ip !== 'localhost') {
-            const detected = `${protocol}//${data.ip}${port}`;
-            setHostOrigin(detected);
-            setCustomIp(detected);
-            return;
+        // If running on local dev (localhost), try to detect local LAN IP with 1.5s timeout
+        if (hostname === 'localhost' || hostname === '127.0.0.1') {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1500);
+            const res = await fetch('/api/network-ip', { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.ip && data.ip !== 'localhost') {
+                const detected = `${protocol}//${data.ip}${port}`;
+                setHostOrigin(detected);
+                setCustomIp(detected);
+              }
+            }
+          } catch {
+            // Keep immediateOrigin fallback
           }
-        } catch (err) {
-          console.warn('Could not auto-detect network IP:', err);
         }
-      }
+      };
 
-      // Safe production URL resolution (Vercel / Cloud / Window origin)
-      const base = getAppBaseUrl();
-      setHostOrigin(base);
-      setCustomIp(base);
-    };
-
-    detectIp();
+      detectIp();
+    }
   }, []);
 
-  const pairUrl = hostOrigin ? `${hostOrigin}/mobile/${roomId}` : '';
+  const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : getAppBaseUrl();
+  const pairUrl = `${hostOrigin || fallbackOrigin}/mobile/${roomId}`;
 
   const copyToClipboard = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard && pairUrl) {
@@ -75,11 +79,11 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
     setHostOrigin(formatted);
   };
 
-  if (!mounted || !pairUrl) {
+  if (!mounted) {
     return (
       <div className="flex flex-col items-center justify-center p-8 glass-panel rounded-2xl border border-slate-800 text-center min-h-[350px]">
         <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-3" />
-        <p className="text-xs text-slate-400 font-semibold">Generating QR Pairing Code...</p>
+        <p className="text-xs text-slate-400 font-semibold">Readying QR Code...</p>
       </div>
     );
   }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveStoredFile, getDirectDownloadUrl } from '@/lib/storage';
+import { recordLinkActivity } from '@/lib/redis';
 
 export async function GET(
   req: NextRequest,
@@ -17,6 +18,7 @@ export async function GET(
   }
 
   item.downloadCount += 1;
+  recordLinkActivity(fileId, 'download').catch(() => {});
 
   // Stream from persistent remote temporary storage
   if (item.remoteUrl) {

@@ -67,7 +67,14 @@ export const P2PTransfer: React.FC<P2PTransferProps> = ({
 
         peerRef.current = peerInstance;
 
+        const fallbackTimer = setTimeout(() => {
+          setPeerStatus((current) =>
+            current === 'Initializing WebRTC...' ? 'Ready for mobile scan' : current
+          );
+        }, 2500);
+
         peerInstance.on('open', (id) => {
+          clearTimeout(fallbackTimer);
           setPeerStatus('Ready for mobile scan');
         });
 

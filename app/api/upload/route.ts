@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { saveTempFile, saveRemoteTempFile } from '@/lib/storage';
+import { initLinkStats } from '@/lib/redis';
+import { checkRateLimit } from '@/lib/rateLimit';
 
 export async function POST(req: NextRequest) {
   try {
+    const rateCheck = checkRateLimit(req, 30, 60000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please wait a moment before uploading again.' },
+        { status: 429 }
+      );
+    }
+
     const contentType = req.headers.get('content-type') || '';
 
     // 1. JSON payload: Direct client upload reference (bypasses 4.5MB Vercel serverless limit)
@@ -22,12 +33,25 @@ export async function POST(req: NextRequest) {
         expiryHours: Number(expiryHours) || 1,
       });
 
+      // Generate private owner token
+      const ownerToken = crypto.randomUUID();
+
+      // Initialize Redis/store stats with identical TTL
+      await initLinkStats({
+        fileId,
+        ownerToken,
+        expiresAt: fileInfo.expiresAt,
+        fileName: fileInfo.name,
+        fileSize: fileInfo.size,
+      });
+
       return NextResponse.json({
         success: true,
         fileId,
         name: fileInfo.name,
         size: fileInfo.size,
         expiresAt: fileInfo.expiresAt,
+        ownerToken,
       });
     }
 
@@ -43,12 +67,25 @@ export async function POST(req: NextRequest) {
 
     const { fileId, fileInfo } = await saveTempFile(file, expiryHours);
 
+    // Generate private owner token
+    const ownerToken = crypto.randomUUID();
+
+    // Initialize Redis/store stats with identical TTL
+    await initLinkStats({
+      fileId,
+      ownerToken,
+      expiresAt: fileInfo.expiresAt,
+      fileName: fileInfo.name,
+      fileSize: fileInfo.size,
+    });
+
     return NextResponse.json({
       success: true,
       fileId,
       name: fileInfo.name,
       size: fileInfo.size,
       expiresAt: fileInfo.expiresAt,
+      ownerToken,
     });
   } catch (err: any) {
     console.error('Upload handler error:', err);
