@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { tempFileStore, cleanupExpiredFiles } from '@/lib/storage';
+import { saveTempFile } from '@/lib/storage';
 
 export async function POST(req: NextRequest) {
   try {
-    cleanupExpiredFiles();
-
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const expiryHoursStr = (formData.get('expiryHours') as string) || '1';
@@ -14,32 +12,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    const fileId = Math.random().toString(36).substring(2, 10);
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer).toString('base64');
-    const now = Date.now();
-    const expiresAt = now + expiryHours * 60 * 60 * 1000;
-
-    tempFileStore.set(fileId, {
-      id: fileId,
-      name: file.name,
-      size: file.size,
-      mimeType: file.type || 'application/octet-stream',
-      buffer: buffer,
-      createdAt: now,
-      expiresAt: expiresAt,
-      downloadCount: 0,
-    });
+    const { fileId, fileInfo } = await saveTempFile(file, expiryHours);
 
     return NextResponse.json({
       success: true,
       fileId,
-      name: file.name,
-      size: file.size,
-      expiresAt,
+      name: fileInfo.name,
+      size: fileInfo.size,
+      expiresAt: fileInfo.expiresAt,
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Upload handler error:', err);
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
+    return NextResponse.json({ error: err?.message || 'Upload failed' }, { status: 500 });
   }
 }

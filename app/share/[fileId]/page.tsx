@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   Loader2,
   HardDriveDownload,
+  ShieldCheck,
 } from 'lucide-react';
 
 export default function ShareDownloadPage() {
@@ -21,11 +22,36 @@ export default function ShareDownloadPage() {
   const [fileInfo, setFileInfo] = useState<{
     name?: string;
     size?: number;
+    expiresAt?: number;
     error?: string;
   }>({});
 
   useEffect(() => {
-    // Perform pre-flight check if link exists
+    if (!fileId) return;
+
+    // Fast client-side decoding if fileId is a self-contained token
+    try {
+      if (typeof window !== 'undefined') {
+        const raw = atob(fileId.replace(/-/g, '+').replace(/_/g, '/'));
+        const parsed = JSON.parse(raw);
+        if (parsed.n && parsed.s) {
+          if (parsed.e && Date.now() > parsed.e) {
+            setFileInfo({ error: 'This temporary file link has expired.' });
+            setLoading(false);
+            return;
+          }
+          setFileInfo({
+            name: parsed.n,
+            size: parsed.s,
+            expiresAt: parsed.e,
+          });
+        }
+      }
+    } catch {
+      // Standard ID, verify via server
+    }
+
+    // Server verification check
     const checkFile = async () => {
       try {
         const res = await fetch(`/api/share/${fileId}`, { method: 'HEAD' });
@@ -38,22 +64,36 @@ export default function ShareDownloadPage() {
             fileName = decodeURIComponent(match[1]);
           }
 
-          setFileInfo({
-            name: fileName,
-            size: parseInt(length, 10),
-          });
-        } else {
+          setFileInfo((prev) => ({
+            name: fileName || prev.name,
+            size: parseInt(length, 10) || prev.size,
+            expiresAt: prev.expiresAt,
+          }));
+        } else if (res.status === 410 || res.status === 404) {
           setFileInfo({ error: 'This temporary file link has expired or was deleted.' });
         }
       } catch (err) {
-        setFileInfo({ error: 'Failed to verify file status' });
+        // If client already decoded metadata, keep it; otherwise show error
+        setFileInfo((prev) => (prev.name ? prev : { error: 'Failed to verify file status' }));
       } finally {
         setLoading(false);
       }
     };
 
-    if (fileId) checkFile();
+    checkFile();
   }, [fileId]);
+
+  const getTimeRemaining = () => {
+    if (!fileInfo.expiresAt) return 'Temporary link with auto-deletion';
+    const diffMs = fileInfo.expiresAt - Date.now();
+    if (diffMs <= 0) return 'Expired';
+    const mins = Math.floor(diffMs / (1000 * 60));
+    const hours = Math.floor(mins / 60);
+    if (hours > 0) {
+      return `Expires in ${hours} hour${hours > 1 ? 's' : ''} ${mins % 60}m`;
+    }
+    return `Expires in ${mins} minute${mins !== 1 ? 's' : ''}`;
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4">
@@ -73,7 +113,7 @@ export default function ShareDownloadPage() {
       {/* Main Download Card */}
       <main className="max-w-xl mx-auto w-full my-auto py-8">
         <div className="glass-panel p-8 rounded-2xl border border-slate-800 text-center space-y-6">
-          {loading ? (
+          {loading && !fileInfo.name ? (
             <div className="py-12 space-y-3">
               <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mx-auto" />
               <p className="text-sm font-semibold text-slate-300">
@@ -111,13 +151,13 @@ export default function ShareDownloadPage() {
 
               <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-xs text-slate-400 flex items-center justify-center gap-2">
                 <Clock className="w-4 h-4 text-indigo-400" />
-                <span>Temporary link with auto-deletion protection</span>
+                <span>{getTimeRemaining()}</span>
               </div>
 
               <a
                 href={`/api/share/${fileId}`}
                 download
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all"
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
                 <HardDriveDownload className="w-5 h-5" />
                 Download File Now ({formatBytes(fileInfo.size || 0)})
@@ -128,8 +168,12 @@ export default function ShareDownloadPage() {
       </main>
 
       {/* Footer */}
-      <footer className="max-w-xl mx-auto w-full text-center text-xs text-slate-500 py-4 border-t border-slate-800">
-        Powered by ShaeIt • Serverless Cloud Share
+      <footer className="max-w-xl mx-auto w-full text-center text-xs text-slate-500 py-4 border-t border-slate-800 flex items-center justify-between">
+        <span>Powered by ShaeIt</span>
+        <span className="flex items-center gap-1 text-emerald-400">
+          <ShieldCheck className="w-3.5 h-3.5" />
+          Auto-Expiring Serverless Link
+        </span>
       </footer>
     </div>
   );
