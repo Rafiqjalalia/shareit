@@ -1,69 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
 import { Navbar, ExtendedMode } from '@/components/Navbar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { QrCodeDisplay } from '@/components/QrCodeDisplay';
+import { P2PTransfer } from '@/components/P2PTransfer';
+import { MobileConnectByCode } from '@/components/MobileConnectByCode';
+import { TempUpload } from '@/components/TempUpload';
+import { PremiumModal } from '@/components/PremiumModal';
 import { generateRoomId } from '@/lib/webrtc';
 import { Wifi, Globe, Shield, Sparkles, Loader2 } from 'lucide-react';
-
-// Dynamic No-SSR client imports to guarantee zero Vercel hydration crashes
-const QrCodeDisplay = dynamic(
-  () => import('@/components/QrCodeDisplay').then((mod) => mod.QrCodeDisplay),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="glass-panel p-8 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[350px]">
-        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
-        <p className="text-xs text-slate-400 font-semibold">Generating QR Code...</p>
-      </div>
-    ),
-  }
-);
-
-const P2PTransfer = dynamic(
-  () => import('@/components/P2PTransfer').then((mod) => mod.P2PTransfer),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="glass-panel p-8 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[350px]">
-        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
-        <p className="text-xs text-slate-400 font-semibold">Loading Receiver HUD...</p>
-      </div>
-    ),
-  }
-);
-
-const MobileConnectByCode = dynamic(
-  () => import('@/components/MobileConnectByCode').then((mod) => mod.MobileConnectByCode),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="glass-panel p-8 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[350px]">
-        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
-        <p className="text-xs text-slate-400 font-semibold">Loading Mobile Sender...</p>
-      </div>
-    ),
-  }
-);
-
-const TempUpload = dynamic(
-  () => import('@/components/TempUpload').then((mod) => mod.TempUpload),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="glass-panel p-8 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[350px]">
-        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
-        <p className="text-xs text-slate-400 font-semibold">Loading Cloud Share Uploader...</p>
-      </div>
-    ),
-  }
-);
-
-const PremiumModal = dynamic(
-  () => import('@/components/PremiumModal').then((mod) => mod.PremiumModal),
-  { ssr: false }
-);
 
 export default function HomePage() {
   const [activeMode, setActiveMode] = useState<ExtendedMode>('p2p');

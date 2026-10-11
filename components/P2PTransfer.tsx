@@ -8,6 +8,7 @@ import {
   formatBytes,
   triggerFileDownload,
   TransferMessage,
+  PEER_ICE_CONFIG,
 } from '@/lib/webrtc';
 import { TransferProgress } from '@/lib/types';
 import {
@@ -62,9 +63,7 @@ export const P2PTransfer: React.FC<P2PTransferProps> = ({
       try {
         const { default: Peer } = await import('peerjs');
         const peerId = `shaeit-pc-${roomId}`;
-        peerInstance = new Peer(peerId, {
-          debug: 1,
-        });
+        peerInstance = new Peer(peerId, PEER_ICE_CONFIG);
 
         peerRef.current = peerInstance;
 

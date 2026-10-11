@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import type Peer from 'peerjs';
 import type { DataConnection } from 'peerjs';
-import { CHUNK_SIZE, formatBytes, TransferMessage } from '@/lib/webrtc';
+import { CHUNK_SIZE, formatBytes, TransferMessage, PEER_ICE_CONFIG } from '@/lib/webrtc';
 import { FREE_TIER_LIMITS } from '@/lib/types';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import {
@@ -16,6 +16,7 @@ import {
   Loader2,
   FileUp,
   ShieldAlert,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function MobileSenderPage() {
@@ -31,6 +32,7 @@ export default function MobileSenderPage() {
   const [speedMBps, setSpeedMBps] = useState<number>(0);
   const [transferredFilesCount, setTransferredFilesCount] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState<number>(0);
 
   const peerRef = useRef<Peer | null>(null);
   const connRef = useRef<DataConnection | null>(null);
@@ -40,17 +42,24 @@ export default function MobileSenderPage() {
     if (!roomId) return;
 
     let peerInstance: Peer | null = null;
+    let isCancelled = false;
 
     const connectToPC = async () => {
       if (typeof window === 'undefined') return;
 
       try {
+        setStatus('Initializing WebRTC...');
+        setErrorMessage(null);
+
         const { default: Peer } = await import('peerjs');
+        if (isCancelled) return;
+
         const mobilePeerId = `shaeit-mob-${Math.floor(Math.random() * 1000000)}`;
-        peerInstance = new Peer(mobilePeerId, { debug: 1 });
+        peerInstance = new Peer(mobilePeerId, PEER_ICE_CONFIG);
         peerRef.current = peerInstance;
 
         peerInstance.on('open', () => {
+          if (isCancelled) return;
           setStatus('Searching for PC session...');
           const targetPcPeerId = `shaeit-pc-${roomId}`;
           const conn = peerInstance!.connect(targetPcPeerId, { reliable: true });
@@ -58,38 +67,47 @@ export default function MobileSenderPage() {
           connRef.current = conn;
 
           conn.on('open', () => {
+            if (isCancelled) return;
             setIsConnected(true);
             setStatus('Connected to PC!');
+            setErrorMessage(null);
           });
 
           conn.on('close', () => {
+            if (isCancelled) return;
             setIsConnected(false);
             setStatus('Disconnected from PC');
           });
 
           conn.on('error', (err) => {
             console.error('Mobile connection error:', err);
-            setErrorMessage('Could not connect to PC room.');
+            if (isCancelled) return;
+            setErrorMessage('Could not connect to PC. Make sure PC has ShaeIt open on the same session code.');
           });
         });
 
         peerInstance.on('error', (err) => {
           console.error('Peer error on mobile:', err);
-          setStatus('Connection Failed. Ensure PC page is open.');
+          if (isCancelled) return;
+          setStatus('Connection Failed');
+          setErrorMessage('Could not establish WebRTC link. Ensure PC screen shows code ' + roomId);
         });
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to initialize PeerJS on mobile:', err);
+        if (isCancelled) return;
         setStatus('WebRTC Error');
+        setErrorMessage(err?.message || 'Failed to initialize peer connection');
       }
     };
 
     connectToPC();
 
     return () => {
+      isCancelled = true;
       if (connRef.current) connRef.current.close();
       if (peerInstance) peerInstance.destroy();
     };
-  }, [roomId]);
+  }, [roomId, retryCount]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -192,15 +210,27 @@ export default function MobileSenderPage() {
             </div>
           </div>
 
-          <span
-            className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${
-              isConnected
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                : 'bg-amber-500/10 border-amber-500/30 text-amber-400 animate-pulse'
-            }`}
-          >
-            {status}
-          </span>
+          <div className="flex items-center gap-2">
+            {!isConnected && (
+              <button
+                onClick={() => setRetryCount((c) => c + 1)}
+                title="Retry connecting to PC"
+                className="px-2 py-1 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs flex items-center gap-1 transition-all"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry</span>
+              </button>
+            )}
+            <span
+              className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${
+                isConnected
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-400 animate-pulse'
+              }`}
+            >
+              {status}
+            </span>
+          </div>
         </header>
 
         {/* Main Action Area */}
@@ -216,9 +246,17 @@ export default function MobileSenderPage() {
           </div>
 
           {errorMessage && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center gap-2 text-rose-400 text-xs">
-              <ShieldAlert className="w-4 h-4 shrink-0" />
-              <span>{errorMessage}</span>
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center justify-between text-rose-400 text-xs">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+              <button
+                onClick={() => setRetryCount((c) => c + 1)}
+                className="px-2 py-0.5 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 rounded text-[11px] font-bold text-rose-300 shrink-0 ml-2"
+              >
+                Retry Link
+              </button>
             </div>
           )}
 
@@ -227,14 +265,14 @@ export default function MobileSenderPage() {
             <input
               type="file"
               onChange={handleFileSelect}
-              disabled={!isConnected || isSending}
+              disabled={isSending}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed"
             />
             <div
               className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
-                isConnected
-                  ? 'border-indigo-500/50 bg-indigo-950/20 hover:bg-indigo-950/30'
-                  : 'border-slate-800 bg-slate-900/40 opacity-60'
+                selectedFile
+                  ? 'border-emerald-500/50 bg-emerald-950/20'
+                  : 'border-indigo-500/50 bg-indigo-950/20 hover:bg-indigo-950/30'
               }`}
             >
               <UploadCloud className="w-12 h-12 text-indigo-400 mx-auto mb-3" />
@@ -282,7 +320,9 @@ export default function MobileSenderPage() {
               className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
             >
               <FileUp className="w-5 h-5" />
-              Send {selectedFile.name} to PC Now
+              {isConnected
+                ? `Send ${selectedFile.name} to PC Now`
+                : `Waiting for PC (${roomId})...`}
             </button>
           )}
         </main>

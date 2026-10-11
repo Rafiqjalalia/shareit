@@ -46,6 +46,39 @@ export function formatBytes(bytes: number, decimals = 2): string {
 }
 
 /**
+ * High-reliability ICE server configuration:
+ * Includes Google STUN, Cloudflare STUN, and OpenRelay TURN servers
+ * to ensure WebRTC connections traverse mobile carrier CGNAT, mobile hotspots, and firewalls.
+ */
+export const PEER_ICE_CONFIG = {
+  debug: 1,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      {
+        urls: 'turn:global.relay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
+      {
+        urls: 'turn:global.relay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
+      {
+        urls: 'turn:global.relay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
+    ],
+    iceCandidatePoolSize: 10,
+  },
+};
+
+/**
  * Triggers browser download for a Blob object.
  */
 export function triggerFileDownload(blob: Blob, filename: string) {
@@ -60,3 +93,4 @@ export function triggerFileDownload(blob: Blob, filename: string) {
     URL.revokeObjectURL(url);
   }, 1000);
 }
+

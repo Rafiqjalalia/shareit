@@ -175,9 +175,14 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
         </button>
       </div>
 
-      <div className="mt-4 flex items-center gap-2 text-xs text-slate-400">
-        <QrCode className="w-4 h-4 text-indigo-400 shrink-0" />
-        <span>Scan with Mobile Camera</span>
+      <div className="mt-4 flex flex-col items-center gap-1 text-xs text-slate-400">
+        <div className="flex items-center gap-1.5 text-indigo-300 font-semibold">
+          <QrCode className="w-4 h-4 text-indigo-400 shrink-0" />
+          <span>Scan with Mobile Camera or QR Reader</span>
+        </div>
+        <p className="text-[11px] text-slate-500 max-w-xs text-center">
+          Connects via Hotspot or Wi-Fi • Direct P2P transfer with zero cloud bandwidth usage
+        </p>
       </div>
     </div>
   );
