@@ -46,6 +46,7 @@ import {
   RefreshCw,
   ExternalLink,
 } from 'lucide-react';
+import { isUrduText } from '@/components/CrossDeviceClipboard';
 
 interface P2PTransferProps {
   roomId: string;
@@ -872,9 +873,12 @@ export const P2PTransfer: React.FC<P2PTransferProps> = ({
                 <textarea
                   value={clipboardText}
                   onChange={(e) => setClipboardText(e.target.value)}
-                  placeholder="Type or paste links, passwords, text, or notes here to send directly to your phone's clipboard..."
+                  dir={isUrduText(clipboardText) ? 'rtl' : 'ltr'}
+                  placeholder="Type or paste links, passwords, text (English or اردو) here to send directly to your phone's clipboard..."
                   rows={3}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 resize-none font-sans"
+                  className={`w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 resize-none ${
+                    isUrduText(clipboardText) ? 'font-urdu text-sm leading-relaxed' : 'font-sans'
+                  }`}
                 />
               </div>
 
@@ -902,44 +906,75 @@ export const P2PTransfer: React.FC<P2PTransferProps> = ({
                 </div>
               ) : (
                 <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {clipboardHistory.map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 text-xs flex items-start justify-between gap-3"
-                    >
-                      <div className="truncate flex-grow">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                              item.direction === 'sent'
-                                ? 'bg-indigo-500/20 text-indigo-300'
-                                : 'bg-emerald-500/20 text-emerald-300'
+                  {clipboardHistory.map((item) => {
+                    const isUrdu = isUrduText(item.text);
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-3 rounded-xl border text-xs flex items-start justify-between gap-3 ${
+                          isUrdu
+                            ? 'bg-emerald-950/20 border-emerald-500/30'
+                            : 'bg-slate-950/60 border-slate-800'
+                        }`}
+                      >
+                        <div className="flex-grow min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                item.direction === 'sent'
+                                  ? 'bg-indigo-500/20 text-indigo-300'
+                                  : 'bg-emerald-500/20 text-emerald-300'
+                              }`}
+                            >
+                              {item.direction === 'sent' ? 'Sent to Mobile' : 'From Mobile'}
+                            </span>
+                            {isUrdu && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-urdu">
+                                اردو (Urdu)
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-500">
+                              {item.senderName} • {item.time}
+                            </span>
+                          </div>
+                          <p
+                            dir={isUrdu ? 'rtl' : 'ltr'}
+                            className={`break-words whitespace-pre-wrap select-all ${
+                              isUrdu
+                                ? 'text-slate-100 font-urdu text-sm leading-loose pt-1'
+                                : 'text-slate-200 font-mono text-[11px]'
                             }`}
                           >
-                            {item.direction === 'sent' ? 'Sent to Mobile' : 'From Mobile'}
-                          </span>
-                          <span className="text-[10px] text-slate-500">
-                            {item.senderName} • {item.time}
-                          </span>
+                            {item.text}
+                          </p>
                         </div>
-                        <p className="text-slate-200 font-mono text-[11px] break-all whitespace-pre-wrap select-all">
-                          {item.text}
-                        </p>
-                      </div>
 
-                      <button
-                        onClick={() => handleCopySnippet(item.id, item.text)}
-                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg shrink-0 transition-all"
-                        title="Copy text"
-                      >
-                        {copiedItemId === item.id ? (
-                          <Check className="w-4 h-4 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                  ))}
+                        <button
+                          onClick={() => handleCopySnippet(item.id, item.text)}
+                          className={`p-2 rounded-lg shrink-0 transition-all flex items-center gap-1.5 font-bold text-xs ${
+                            copiedItemId === item.id
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : isUrdu
+                              ? 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                          }`}
+                          title="Copy to PC Clipboard"
+                        >
+                          {copiedItemId === item.id ? (
+                            <>
+                              <Check className="w-4 h-4 text-emerald-400" />
+                              <span className="text-emerald-400">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-4 h-4" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

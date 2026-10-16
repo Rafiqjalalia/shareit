@@ -46,7 +46,10 @@ import {
   Send,
   Trash2,
   ShieldCheck,
+  Mic,
+  MicOff,
 } from 'lucide-react';
+import { isUrduText } from '@/components/CrossDeviceClipboard';
 
 type MobileTab = 'send' | 'receive' | 'clipboard' | 'records';
 
@@ -104,6 +107,12 @@ export default function MobileSenderPage() {
   >([]);
   const [clipboardNotice, setClipboardNotice] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Dictation state (Urdu & English)
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [dictationLang, setDictationLang] = useState<'ur-PK' | 'en-US'>('ur-PK');
+  const [interimTranscript, setInterimTranscript] = useState<string>('');
+  const recognitionRef = useRef<any>(null);
 
   // Transfer Records state
   const [records, setRecords] = useState<TransferRecord[]>([]);
@@ -236,6 +245,13 @@ export default function MobileSenderPage() {
 
     return () => {
       isCancelled = true;
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // Ignore
+        }
+      }
       if (connRef.current) connRef.current.close();
       if (peerInstance) peerInstance.destroy();
     };
@@ -521,6 +537,92 @@ export default function MobileSenderPage() {
     setTimeout(() => setClipboardNotice(null), 3000);
   };
 
+  const toggleMobileDictation = () => {
+    if (typeof window === 'undefined') return;
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setErrorMessage('Voice dictation requires Google Chrome, Edge, or Safari.');
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // Ignore
+        }
+      }
+      setIsListening(false);
+      setInterimTranscript('');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = dictationLang; // 'ur-PK' or 'en-US'
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setErrorMessage(null);
+        setInterimTranscript('');
+        setClipboardNotice(
+          dictationLang === 'ur-PK'
+            ? 'مائیکروفون آن ہے: بولیں، اردو لکھی جا رہی ہے...'
+            : 'Listening in English... Speak clearly'
+        );
+        setTimeout(() => setClipboardNotice(null), 3000);
+      };
+
+      recognition.onresult = (event: any) => {
+        let finalChunk = '';
+        let interimChunk = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalChunk += event.results[i][0].transcript;
+          } else {
+            interimChunk += event.results[i][0].transcript;
+          }
+        }
+
+        setInterimTranscript(interimChunk);
+
+        if (finalChunk) {
+          setClipboardText((prev) => {
+            const sep = prev && !prev.endsWith(' ') ? ' ' : '';
+            return prev + sep + finalChunk.trim();
+          });
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event.error);
+        if (event.error === 'not-allowed') {
+          setErrorMessage('Microphone access denied. Please grant permission in browser settings.');
+        }
+        setIsListening(false);
+        setInterimTranscript('');
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        setInterimTranscript('');
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      console.error('Failed to start speech recognition:', err);
+      setIsListening(false);
+    }
+  };
+
   const handleCopyClipboardItem = async (id: string, text: string) => {
     const ok = await copyTextToClipboard(text);
     if (ok) {
@@ -635,8 +737,11 @@ export default function MobileSenderPage() {
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Clipboard className="w-4 h-4" />
-            <span>Clipboard</span>
+            <div className="flex items-center gap-1">
+              <Clipboard className="w-4 h-4" />
+              <Mic className="w-3 h-3 text-emerald-400" />
+            </div>
+            <span>Clipboard / بولیں</span>
             {clipboardItems.length > 0 && (
               <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-amber-400" />
             )}
@@ -679,6 +784,22 @@ export default function MobileSenderPage() {
           {/* TAB 1: SEND MULTIPLE FILES TO PC */}
           {activeTab === 'send' && (
             <div className="space-y-4">
+              {/* Quick Urdu Dictation Tip Banner */}
+              <div
+                onClick={() => setActiveTab('clipboard')}
+                className="p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-2 cursor-pointer hover:bg-emerald-950/60 transition-all text-xs"
+              >
+                <div className="flex items-center gap-2">
+                  <Mic className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
+                  <span className="text-emerald-300 font-medium">
+                    پی سی پر اردو بول کر لکھیں (Voice Dictate to PC)
+                  </span>
+                </div>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-bold shrink-0">
+                  Try Now →
+                </span>
+              </div>
+
               <div className="text-center">
                 <Smartphone className="w-10 h-10 text-indigo-400 mx-auto mb-1" />
                 <h2 className="text-lg font-extrabold text-white">Send Files to PC</h2>
@@ -908,23 +1029,153 @@ export default function MobileSenderPage() {
               )}
 
               {/* Send Clipboard from Mobile to PC */}
-              <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
-                <label className="text-xs font-bold text-slate-300">Send Text to PC Clipboard</label>
+              <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <Clipboard className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Send to PC Clipboard</span>
+                  </label>
+
+                  <div className="flex items-center gap-1.5">
+                    {/* Urdu vs English selector */}
+                    <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-xs font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDictationLang('ur-PK');
+                          if (isListening && recognitionRef.current) {
+                            try {
+                              recognitionRef.current.stop();
+                            } catch {}
+                          }
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                          dictationLang === 'ur-PK'
+                            ? 'bg-emerald-600 text-white font-urdu'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                        title="Urdu (پاکستان)"
+                      >
+                        اردو (Urdu)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDictationLang('en-US');
+                          if (isListening && recognitionRef.current) {
+                            try {
+                              recognitionRef.current.stop();
+                            } catch {}
+                          }
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                          dictationLang === 'en-US'
+                            ? 'bg-indigo-600 text-white'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                        title="English"
+                      >
+                        English
+                      </button>
+                    </div>
+
+                    {/* Dictate Voice Button */}
+                    <button
+                      type="button"
+                      onClick={toggleMobileDictation}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
+                        isListening
+                          ? 'bg-rose-600 text-white animate-pulse shadow-md shadow-rose-600/40 border border-rose-400'
+                          : 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30'
+                      }`}
+                      title={isListening ? 'Stop listening' : 'Speak to dictate in Urdu or English'}
+                    >
+                      {isListening ? (
+                        <>
+                          <MicOff className="w-3 h-3" />
+                          <span>Stop</span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="w-3 h-3 text-emerald-400" />
+                          <span>{dictationLang === 'ur-PK' ? 'بولیں (Dictate)' : 'Dictate'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Live Speech Feedback HUD */}
+                {isListening && (
+                  <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl space-y-1.5 animate-pulse">
+                    <div className="flex items-center justify-between text-[11px] text-rose-300 font-semibold">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" />
+                        {dictationLang === 'ur-PK'
+                          ? 'اردو میں بولیں، سن رہا ہے...'
+                          : 'Listening in English... Speak clearly'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          toggleMobileDictation();
+                          if (clipboardText.trim()) {
+                            handleSendClipboardToPC();
+                          }
+                        }}
+                        className="px-2 py-0.5 bg-rose-600 hover:bg-rose-500 text-white rounded font-bold text-[10px] shadow"
+                      >
+                        Done & Send
+                      </button>
+                    </div>
+                    {interimTranscript && (
+                      <p
+                        dir={dictationLang === 'ur-PK' ? 'rtl' : 'ltr'}
+                        className={`text-xs text-rose-200 italic bg-rose-950/40 p-2 rounded-lg ${
+                          dictationLang === 'ur-PK' ? 'font-urdu text-sm' : ''
+                        }`}
+                      >
+                        {interimTranscript}...
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <textarea
                   value={clipboardText}
                   onChange={(e) => setClipboardText(e.target.value)}
-                  placeholder="Paste or type text, link, or note to send to PC..."
+                  dir={isUrduText(clipboardText) || dictationLang === 'ur-PK' ? 'rtl' : 'ltr'}
+                  placeholder={
+                    dictationLang === 'ur-PK'
+                      ? 'اردو بولیں یا لکھیں، براہ راست پی سی پر پہنچے گی...'
+                      : 'Speak or paste text, links, or notes to send to PC...'
+                  }
                   rows={2}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 resize-none font-sans"
+                  className={`w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 resize-none ${
+                    isUrduText(clipboardText) || dictationLang === 'ur-PK'
+                      ? 'font-urdu text-sm leading-relaxed'
+                      : 'font-sans'
+                  }`}
                 />
-                <button
-                  onClick={handleSendClipboardToPC}
-                  disabled={!isConnected || !clipboardText.trim()}
-                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Send to PC</span>
-                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSendClipboardToPC}
+                    disabled={!isConnected || !clipboardText.trim()}
+                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send to PC</span>
+                  </button>
+                  {clipboardText && (
+                    <button
+                      onClick={() => setClipboardText('')}
+                      className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl transition-all"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Received Clipboard list */}
@@ -945,25 +1196,44 @@ export default function MobileSenderPage() {
                   <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                     {clipboardItems.map((item) => {
                       const isUrl = /^https?:\/\//i.test(item.text.trim());
+                      const isUrdu = isUrduText(item.text);
                       return (
                         <div
                           key={item.id}
-                          className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-2"
+                          className={`p-3 rounded-xl border space-y-2 ${
+                            isUrdu
+                              ? 'bg-emerald-950/20 border-emerald-500/30'
+                              : 'bg-slate-900 border-slate-800'
+                          }`}
                         >
                           <div className="flex items-center justify-between text-[10px]">
-                            <span
-                              className={`px-1.5 py-0.5 rounded font-bold ${
-                                item.direction === 'sent'
-                                  ? 'bg-indigo-500/20 text-indigo-300'
-                                  : 'bg-emerald-500/20 text-emerald-300'
-                              }`}
-                            >
-                              {item.direction === 'sent' ? 'Sent to PC' : 'From PC'}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`px-1.5 py-0.5 rounded font-bold ${
+                                  item.direction === 'sent'
+                                    ? 'bg-indigo-500/20 text-indigo-300'
+                                    : 'bg-emerald-500/20 text-emerald-300'
+                                }`}
+                              >
+                                {item.direction === 'sent' ? 'Sent to PC' : 'From PC'}
+                              </span>
+                              {isUrdu && (
+                                <span className="px-1.5 py-0.5 rounded font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-urdu">
+                                  اردو
+                                </span>
+                              )}
+                            </div>
                             <span className="text-slate-500">{item.time}</span>
                           </div>
 
-                          <p className="text-xs text-slate-200 font-mono break-all whitespace-pre-wrap select-all">
+                          <p
+                            dir={isUrdu ? 'rtl' : 'ltr'}
+                            className={`break-all whitespace-pre-wrap select-all ${
+                              isUrdu
+                                ? 'text-xs text-slate-100 font-urdu leading-relaxed'
+                                : 'text-xs text-slate-200 font-mono'
+                            }`}
+                          >
                             {item.text}
                           </p>
 

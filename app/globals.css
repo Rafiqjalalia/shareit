@@ -47,3 +47,11 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(99, 102, 241, 0.6);
 }
+
+/* Urdu & Arabic RTL Typography */
+[dir="rtl"], .font-urdu {
+  font-family: 'Segoe UI', Tahoma, 'Noto Nastaliq Urdu', 'Urdu Typesetting', Arial, sans-serif;
+  line-height: 1.85;
+  letter-spacing: normal;
+}
+
