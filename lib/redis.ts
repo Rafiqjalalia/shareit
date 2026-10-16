@@ -1,4 +1,5 @@
 import { Redis } from '@upstash/redis';
+import { CLIPBOARD_CONFIG } from './clipboardConfig';
 
 /**
  * Serverless store for Temporary Cloud Share links activity tracking.
@@ -58,13 +59,19 @@ interface MemoryStoreItem {
 }
 
 interface MemoryPasteItem {
-  items: QuickPasteItem[];
+  items: ClipboardItem[];
+  expiresAt: number;
+}
+
+interface MemorySpaceItem {
+  space: ClipboardSpaceData;
   expiresAt: number;
 }
 
 const globalForRedis = globalThis as unknown as {
   memoryStatsStore: Map<string, MemoryStoreItem> | undefined;
   memoryPasteStore: Map<string, MemoryPasteItem> | undefined;
+  memorySpaceStore: Map<string, MemorySpaceItem> | undefined;
 };
 
 if (!globalForRedis.memoryStatsStore) {
@@ -73,9 +80,13 @@ if (!globalForRedis.memoryStatsStore) {
 if (!globalForRedis.memoryPasteStore) {
   globalForRedis.memoryPasteStore = new Map<string, MemoryPasteItem>();
 }
+if (!globalForRedis.memorySpaceStore) {
+  globalForRedis.memorySpaceStore = new Map<string, MemorySpaceItem>();
+}
 
 const memoryStatsStore = globalForRedis.memoryStatsStore;
 const memoryPasteStore = globalForRedis.memoryPasteStore;
+const memorySpaceStore = globalForRedis.memorySpaceStore;
 
 function cleanExpiredMemoryStats() {
   const now = Date.now();
@@ -87,6 +98,11 @@ function cleanExpiredMemoryStats() {
   for (const [key, item] of memoryPasteStore.entries()) {
     if (now > item.expiresAt) {
       memoryPasteStore.delete(key);
+    }
+  }
+  for (const [key, item] of memorySpaceStore.entries()) {
+    if (now > item.expiresAt) {
+      memorySpaceStore.delete(key);
     }
   }
 }
@@ -337,123 +353,383 @@ export async function getLinkStats(
 
 /**
  * =========================================================
- * FEATURE 2: Quick Paste (Phone -> PC Text & Links) Store
- * Messages expire after 30 minutes of session inactivity.
- * Capped at last 10 items for the session.
+ * FEATURE 2: Cross-Device Clipboard Spaces Store
+ * Persistent across sessions without login.
+ * Automatic TTL: 24 hours of inactivity.
+ * Text only: Stored in Upstash Redis or in-memory fallback.
  * =========================================================
  */
 
-export interface QuickPasteItem {
+export interface ClipboardItem {
   id: string;
   code: string;
   text: string;
   createdAt: number;
   isUrl: boolean;
+  pinned: boolean;
+  deviceId?: string;
+  deviceName: string;
+  deviceType: 'mobile' | 'tablet' | 'desktop';
 }
 
-export const PASTE_SESSION_INACTIVITY_TTL_SEC = 30 * 60; // 30 minutes
+export type QuickPasteItem = ClipboardItem;
+
+export interface SpaceDevice {
+  deviceId: string;
+  deviceName: string;
+  deviceType: 'mobile' | 'tablet' | 'desktop';
+  lastSeen: number;
+}
+
+export interface ClipboardSpaceData {
+  code: string;
+  createdAt: number;
+  lastUpdated: number;
+  devices: SpaceDevice[];
+  items: ClipboardItem[];
+}
+
+export const PASTE_SESSION_INACTIVITY_TTL_SEC = CLIPBOARD_CONFIG.SPACE_TTL_SECONDS;
 
 /**
- * Saves a quick text/link paste to the session and refreshes the 30-minute inactivity TTL.
+ * Normalizes and sorts items (pinned first descending by time, then unpinned descending by time).
  */
-export async function saveQuickPaste(
+export function sortClipboardItems(items: ClipboardItem[]): ClipboardItem[] {
+  const pinned = items.filter((i) => i.pinned).sort((a, b) => b.createdAt - a.createdAt);
+  const unpinned = items.filter((i) => !i.pinned).sort((a, b) => b.createdAt - a.createdAt);
+  return [...pinned, ...unpinned];
+}
+
+/**
+ * Retrieves or initializes a clipboard space, optionally registering/updating the requesting device.
+ */
+export async function getClipboardSpace(
   code: string,
-  text: string
-): Promise<QuickPasteItem> {
+  device?: SpaceDevice
+): Promise<
+  | { status: 'ok'; space: ClipboardSpaceData }
+  | { status: 'device_limit_reached'; message: string; space?: ClipboardSpaceData }
+  | { status: 'not_found' }
+> {
   const cleanCode = code.trim().toUpperCase();
-  const trimmedText = text.slice(0, 5000);
+  const key = `space:${cleanCode}`;
   const now = Date.now();
-  const isUrl = /^(https?:\/\/[^\s]+)$/i.test(trimmedText.trim());
 
-  const item: QuickPasteItem = {
-    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 10),
-    code: cleanCode,
-    text: trimmedText,
-    createdAt: now,
-    isUrl,
-  };
+  let space: ClipboardSpaceData | null = null;
 
-  const key = `paste:${cleanCode}`;
-
+  // 1. Fetch from Upstash Redis if configured
   if (redisClient) {
     try {
-      const raw = await redisClient.get<string | QuickPasteItem[]>(key);
-      let list: QuickPasteItem[] = [];
+      const raw = await redisClient.get<string | ClipboardSpaceData>(key);
       if (raw) {
-        list = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        space = typeof raw === 'string' ? JSON.parse(raw) : raw;
       }
-      list = [item, ...list].slice(0, 10);
-      await redisClient.set(key, JSON.stringify(list), { ex: PASTE_SESSION_INACTIVITY_TTL_SEC });
-      return item;
     } catch (err) {
-      console.warn('Upstash Redis saveQuickPaste error, falling back to memory store:', err);
+      console.warn('Upstash Redis getClipboardSpace error, falling back to memory store:', err);
     }
   }
 
-  // Memory fallback
+  // 2. Fetch from in-memory fallback if not found in Redis
+  if (!space) {
+    cleanExpiredMemoryStats();
+    const existing = memorySpaceStore.get(key);
+    if (existing) {
+      if (now > existing.expiresAt) {
+        memorySpaceStore.delete(key);
+      } else {
+        space = existing.space;
+      }
+    }
+  }
+
+  // 3. If space does not exist yet: create a new one
+  if (!space) {
+    space = {
+      code: cleanCode,
+      createdAt: now,
+      lastUpdated: now,
+      devices: device ? [device] : [],
+      items: [],
+    };
+  }
+
+  // 4. Register or update the requesting device (if provided)
+  if (device) {
+    // Filter out stale devices inactive for > 24 hours
+    const activeDevices = space.devices.filter(
+      (d) => d.deviceId === device.deviceId || now - d.lastSeen < 24 * 60 * 60 * 1000
+    );
+
+    const existingIdx = activeDevices.findIndex((d) => d.deviceId === device.deviceId);
+    if (existingIdx >= 0) {
+      activeDevices[existingIdx] = {
+        ...device,
+        lastSeen: now,
+      };
+      space.devices = activeDevices;
+    } else {
+      if (activeDevices.length >= CLIPBOARD_CONFIG.MAX_DEVICES_PER_SPACE) {
+        return {
+          status: 'device_limit_reached',
+          message: CLIPBOARD_CONFIG.PRO_UPGRADE_MESSAGE,
+          space: {
+            ...space,
+            items: sortClipboardItems(space.items),
+          },
+        };
+      }
+      activeDevices.push({
+        ...device,
+        lastSeen: now,
+      });
+      space.devices = activeDevices;
+    }
+  }
+
+  space.items = sortClipboardItems(space.items);
+
+  // 5. Persist back to storage with 24h TTL
+  if (redisClient) {
+    try {
+      await redisClient.set(key, JSON.stringify(space), { ex: CLIPBOARD_CONFIG.SPACE_TTL_SECONDS });
+    } catch (err) {
+      console.warn('Upstash Redis set error in getClipboardSpace:', err);
+    }
+  }
+
   cleanExpiredMemoryStats();
-  const existing = memoryPasteStore.get(key);
-  let list: QuickPasteItem[] = existing ? existing.items : [];
-  list = [item, ...list].slice(0, 10);
-  memoryPasteStore.set(key, {
-    items: list,
-    expiresAt: now + PASTE_SESSION_INACTIVITY_TTL_SEC * 1000,
+  memorySpaceStore.set(key, {
+    space,
+    expiresAt: now + CLIPBOARD_CONFIG.SPACE_TTL_SECONDS * 1000,
   });
 
-  return item;
+  return { status: 'ok', space };
 }
 
 /**
- * Retrieves the session history of items (up to 10) and refreshes the 30-minute inactivity TTL.
+ * Saves a new clipboard item into the specified space.
+ * Enforces max 10KB per item and max 10 items per space.
  */
-export async function getQuickPastes(code: string): Promise<QuickPasteItem[]> {
+export async function saveClipboardItem(
+  code: string,
+  params: {
+    text: string;
+    deviceId?: string;
+    deviceName?: string;
+    deviceType?: 'mobile' | 'tablet' | 'desktop';
+  }
+): Promise<
+  | { success: true; item: ClipboardItem; space: ClipboardSpaceData }
+  | { success: false; error: 'item_limit_reached' | 'size_limit_reached' | 'empty_text'; message: string }
+> {
   const cleanCode = code.trim().toUpperCase();
-  const key = `paste:${cleanCode}`;
+  const text = params.text.trim();
   const now = Date.now();
+
+  if (!text) {
+    return { success: false, error: 'empty_text', message: 'Text cannot be empty.' };
+  }
+
+  const byteLength = new Blob([text]).size;
+  if (byteLength > CLIPBOARD_CONFIG.MAX_ITEM_SIZE_BYTES) {
+    return {
+      success: false,
+      error: 'size_limit_reached',
+      message: `Item exceeds the 10KB size limit (${(byteLength / 1024).toFixed(1)}KB). Free tier allows up to 10KB per item.`,
+    };
+  }
+
+  // Retrieve current space
+  const res = await getClipboardSpace(cleanCode);
+  let space: ClipboardSpaceData;
+  if (res.status === 'ok') {
+    space = res.space;
+  } else if (res.status === 'device_limit_reached' && res.space) {
+    space = res.space;
+  } else {
+    space = {
+      code: cleanCode,
+      createdAt: now,
+      lastUpdated: now,
+      devices: [],
+      items: [],
+    };
+  }
+
+  if (space.items.length >= CLIPBOARD_CONFIG.MAX_ITEMS_PER_SPACE) {
+    return {
+      success: false,
+      error: 'item_limit_reached',
+      message: CLIPBOARD_CONFIG.PRO_UPGRADE_MESSAGE,
+    };
+  }
+
+  const isUrl = /^(https?:\/\/[^\s]+)$/i.test(text);
+
+  const newItem: ClipboardItem = {
+    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 10),
+    code: cleanCode,
+    text,
+    createdAt: now,
+    isUrl,
+    pinned: false,
+    deviceId: params.deviceId,
+    deviceName: params.deviceName || 'Device',
+    deviceType: params.deviceType || 'desktop',
+  };
+
+  space.items = [newItem, ...space.items];
+  space.items = sortClipboardItems(space.items);
+  space.lastUpdated = now;
+
+  const key = `space:${cleanCode}`;
 
   if (redisClient) {
     try {
-      const raw = await redisClient.get<string | QuickPasteItem[]>(key);
-      if (raw) {
-        const list: QuickPasteItem[] = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        await redisClient.expire(key, PASTE_SESSION_INACTIVITY_TTL_SEC);
-        return list;
-      }
-      return [];
+      await redisClient.set(key, JSON.stringify(space), { ex: CLIPBOARD_CONFIG.SPACE_TTL_SECONDS });
     } catch (err) {
-      console.warn('Upstash Redis getQuickPastes error, falling back to memory store:', err);
+      console.warn('Upstash Redis set error in saveClipboardItem:', err);
     }
   }
 
-  // Memory fallback
   cleanExpiredMemoryStats();
-  const existing = memoryPasteStore.get(key);
-  if (existing) {
-    if (now > existing.expiresAt) {
-      memoryPasteStore.delete(key);
-      return [];
-    }
-    existing.expiresAt = now + PASTE_SESSION_INACTIVITY_TTL_SEC * 1000;
-    return existing.items;
+  memorySpaceStore.set(key, {
+    space,
+    expiresAt: now + CLIPBOARD_CONFIG.SPACE_TTL_SECONDS * 1000,
+  });
+
+  return { success: true, item: newItem, space };
+}
+
+/**
+ * Pins, unpins, or deletes an item in a clipboard space.
+ */
+export async function updateClipboardItem(
+  code: string,
+  itemId: string,
+  action: 'pin' | 'unpin' | 'delete'
+): Promise<{ success: boolean; space?: ClipboardSpaceData }> {
+  const cleanCode = code.trim().toUpperCase();
+  const res = await getClipboardSpace(cleanCode);
+  if (res.status !== 'ok') return { success: false };
+
+  const space = res.space;
+  const now = Date.now();
+
+  if (action === 'delete') {
+    space.items = space.items.filter((i) => i.id !== itemId);
+  } else if (action === 'pin') {
+    const item = space.items.find((i) => i.id !== itemId ? false : true);
+    const target = space.items.find((i) => i.id === itemId);
+    if (target) target.pinned = true;
+  } else if (action === 'unpin') {
+    const target = space.items.find((i) => i.id === itemId);
+    if (target) target.pinned = false;
   }
 
+  space.items = sortClipboardItems(space.items);
+  space.lastUpdated = now;
+
+  const key = `space:${cleanCode}`;
+  if (redisClient) {
+    try {
+      await redisClient.set(key, JSON.stringify(space), { ex: CLIPBOARD_CONFIG.SPACE_TTL_SECONDS });
+    } catch (err) {
+      console.warn('Upstash Redis set error in updateClipboardItem:', err);
+    }
+  }
+
+  cleanExpiredMemoryStats();
+  memorySpaceStore.set(key, {
+    space,
+    expiresAt: now + CLIPBOARD_CONFIG.SPACE_TTL_SECONDS * 1000,
+  });
+
+  return { success: true, space };
+}
+
+/**
+ * Clears all items in a clipboard space.
+ */
+export async function clearClipboardSpace(code: string): Promise<boolean> {
+  const cleanCode = code.trim().toUpperCase();
+  const res = await getClipboardSpace(cleanCode);
+  if (res.status !== 'ok') return false;
+
+  const space = res.space;
+  space.items = [];
+  space.lastUpdated = Date.now();
+
+  const key = `space:${cleanCode}`;
+  if (redisClient) {
+    try {
+      await redisClient.set(key, JSON.stringify(space), { ex: CLIPBOARD_CONFIG.SPACE_TTL_SECONDS });
+    } catch (err) {
+      console.warn('Upstash Redis set error in clearClipboardSpace:', err);
+    }
+  }
+
+  cleanExpiredMemoryStats();
+  memorySpaceStore.set(key, {
+    space,
+    expiresAt: Date.now() + CLIPBOARD_CONFIG.SPACE_TTL_SECONDS * 1000,
+  });
+
+  return true;
+}
+
+/**
+ * Removes a device from a clipboard space.
+ */
+export async function leaveClipboardSpace(code: string, deviceId: string): Promise<boolean> {
+  const cleanCode = code.trim().toUpperCase();
+  const res = await getClipboardSpace(cleanCode);
+  if (res.status !== 'ok') return false;
+
+  const space = res.space;
+  space.devices = space.devices.filter((d) => d.deviceId !== deviceId);
+  space.lastUpdated = Date.now();
+
+  const key = `space:${cleanCode}`;
+  if (redisClient) {
+    try {
+      await redisClient.set(key, JSON.stringify(space), { ex: CLIPBOARD_CONFIG.SPACE_TTL_SECONDS });
+    } catch (err) {
+      console.warn('Upstash Redis set error in leaveClipboardSpace:', err);
+    }
+  }
+
+  cleanExpiredMemoryStats();
+  memorySpaceStore.set(key, {
+    space,
+    expiresAt: Date.now() + CLIPBOARD_CONFIG.SPACE_TTL_SECONDS * 1000,
+  });
+
+  return true;
+}
+
+/**
+ * BACKWARD COMPATIBILITY HELPERS:
+ */
+export async function saveQuickPaste(code: string, text: string): Promise<QuickPasteItem> {
+  const res = await saveClipboardItem(code, { text });
+  if (res.success) {
+    return res.item;
+  }
+  throw new Error(res.message);
+}
+
+export async function getQuickPastes(code: string): Promise<QuickPasteItem[]> {
+  const res = await getClipboardSpace(code);
+  if (res.status === 'ok') {
+    return res.space.items;
+  }
+  if (res.status === 'device_limit_reached' && res.space) {
+    return res.space.items;
+  }
   return [];
 }
 
-/**
- * Clears the session history for this pairing code.
- */
 export async function clearQuickPastes(code: string): Promise<void> {
-  const cleanCode = code.trim().toUpperCase();
-  const key = `paste:${cleanCode}`;
-
-  if (redisClient) {
-    try {
-      await redisClient.del(key);
-    } catch (err) {
-      console.warn('Upstash Redis clearQuickPastes error:', err);
-    }
-  }
-
-  memoryPasteStore.delete(key);
+  await clearClipboardSpace(code);
 }

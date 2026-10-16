@@ -1,13 +1,28 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Smartphone, ArrowRight, Zap } from 'lucide-react';
+import { Smartphone, ArrowRight, Zap, History, Laptop } from 'lucide-react';
 
 export const MobileConnectByCode: React.FC = () => {
   const [code, setCode] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [savedSessionCode, setSavedSessionCode] = useState<string | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('shaeit_mobile_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.roomId && Date.now() - parsed.timestamp < 1000 * 60 * 60 * 3) {
+          setSavedSessionCode(parsed.roomId);
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }, []);
 
   const handleConnect = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,11 +43,29 @@ export const MobileConnectByCode: React.FC = () => {
       </div>
 
       <div>
-        <h3 className="text-lg font-bold text-white">Send Files to PC</h3>
+        <h3 className="text-lg font-bold text-white">Connect & Share with PC</h3>
         <p className="text-xs text-slate-400 mt-1">
           Enter the 6-character Session Code displayed on your PC screen
         </p>
       </div>
+
+      {/* Resume Previous Session Option if available */}
+      {savedSessionCode && (
+        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-left flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 text-emerald-300">
+            <History className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>
+              Resume Session <strong className="font-mono text-white">{savedSessionCode}</strong>
+            </span>
+          </div>
+          <button
+            onClick={() => router.push(`/mobile/${savedSessionCode}`)}
+            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-all"
+          >
+            Connect
+          </button>
+        </div>
+      )}
 
       <form onSubmit={handleConnect} className="space-y-4 max-w-sm mx-auto">
         <div>
@@ -55,14 +88,14 @@ export const MobileConnectByCode: React.FC = () => {
           type="submit"
           className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all"
         >
-          <span>Connect & Send Files to PC</span>
+          <span>Connect to PC Now</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </form>
 
       <div className="text-[11px] text-slate-500 flex items-center justify-center gap-1.5 pt-2 border-t border-slate-800">
         <Zap className="w-3.5 h-3.5 text-indigo-400" />
-        <span>Direct Browser-to-Browser Wi-Fi Transfer</span>
+        <span>Direct Browser-to-Browser Wi-Fi Transfer & Live Clipboard</span>
       </div>
     </div>
   );

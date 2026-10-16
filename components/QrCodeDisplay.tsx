@@ -2,24 +2,28 @@
 
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Copy, Check, QrCode, RefreshCw, Radio, Globe } from 'lucide-react';
+import { Copy, Check, QrCode, RefreshCw, Radio, Globe, Smartphone, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { getAppBaseUrl } from '@/lib/config';
+import { DeviceInfo } from '@/lib/device';
 
 interface QrCodeDisplayProps {
   roomId: string;
   isPeerConnected: boolean;
+  connectedDevice?: DeviceInfo | null;
   onRefreshRoom: () => void;
 }
 
 export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
   roomId,
   isPeerConnected,
+  connectedDevice,
   onRefreshRoom,
 }) => {
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [hostOrigin, setHostOrigin] = useState<string>('');
   const [customIp, setCustomIp] = useState<string>('');
+  const [showQrAnyway, setShowQrAnyway] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -34,7 +38,6 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
         const port = window.location.port ? `:${window.location.port}` : '';
         const protocol = window.location.protocol;
 
-        // If running on local dev (localhost), try to detect local LAN IP with 1.5s timeout
         if (hostname === 'localhost' || hostname === '127.0.0.1') {
           try {
             const controller = new AbortController();
@@ -94,6 +97,7 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
       <div className="absolute -top-16 -left-16 w-32 h-32 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-16 -right-16 w-32 h-32 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
 
+      {/* Connection Status Indicator */}
       <div className="flex items-center gap-2 mb-4">
         <span
           className={`flex h-2.5 w-2.5 rounded-full ${
@@ -103,27 +107,70 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
           }`}
         />
         <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-          {isPeerConnected ? 'Mobile Device Connected!' : 'Waiting for Mobile...'}
+          {isPeerConnected ? 'Session Active (1-Time Scan Paired)' : 'Waiting for Mobile Scan...'}
         </span>
       </div>
 
-      {/* QR Box Container */}
-      <div className="relative group p-4 bg-white rounded-2xl shadow-xl shadow-indigo-950/40 border border-slate-200/20 transition-all hover:scale-[1.02]">
-        <QRCodeSVG
-          value={pairUrl}
-          size={210}
-          level="H"
-          includeMargin={false}
-        />
-
-        {isPeerConnected && (
-          <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center p-4">
-            <Radio className="w-12 h-12 text-emerald-400 animate-bounce mb-2" />
-            <p className="text-sm font-bold text-white">Direct WebRTC Link Active</p>
-            <p className="text-xs text-slate-400 mt-1">Ready to receive files from Mobile</p>
+      {/* When peer is connected and user hasn't explicitly clicked showQrAnyway: Show Locked 1-Time Scan Paired View */}
+      {isPeerConnected && !showQrAnyway ? (
+        <div className="w-full max-w-sm p-6 bg-slate-900/90 border border-emerald-500/30 rounded-2xl shadow-xl space-y-4 transition-all">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
+            <CheckCircle2 className="w-9 h-9" />
           </div>
-        )}
-      </div>
+
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded-full text-emerald-300 text-[11px] font-bold mb-1.5">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              1-Time Scan Successful
+            </div>
+            <h3 className="text-base font-bold text-white">Mobile Device Paired</h3>
+            <p className="text-xs text-slate-400 mt-1">
+              QR code locked for this session. You do <span className="text-emerald-400 font-semibold">NOT</span> need to scan again!
+            </p>
+          </div>
+
+          {/* Connected Device Card */}
+          <div className="bg-slate-950/70 p-3 rounded-xl border border-slate-800 text-left flex items-center gap-3">
+            <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400 shrink-0">
+              <Smartphone className="w-5 h-5" />
+            </div>
+            <div className="truncate">
+              <p className="text-xs font-bold text-white truncate">
+                {connectedDevice?.deviceName || 'Mobile Device'}
+              </p>
+              <p className="text-[10px] text-slate-400">
+                {connectedDevice ? `${connectedDevice.os} • ${connectedDevice.browser}` : 'Direct WebRTC Connected'}
+              </p>
+            </div>
+          </div>
+
+          <div className="pt-2 flex flex-col gap-2">
+            <button
+              onClick={() => setShowQrAnyway(true)}
+              className="text-[11px] text-slate-400 hover:text-slate-200 underline decoration-slate-600 transition-all"
+            >
+              Show QR code again
+            </button>
+            <button
+              onClick={onRefreshRoom}
+              className="w-full py-2 px-3 text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl transition-all flex items-center justify-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Disconnect & Start New Session
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Normal QR Code View */
+        <div className="relative group p-4 bg-white rounded-2xl shadow-xl shadow-indigo-950/40 border border-slate-200/20 transition-all hover:scale-[1.01]">
+          <QRCodeSVG
+            value={pairUrl}
+            size={210}
+            level="H"
+            includeMargin={false}
+          />
+        </div>
+      )}
 
       {/* Room Details & Actions */}
       <div className="mt-5 w-full max-w-xs space-y-3">
@@ -182,10 +229,10 @@ export const QrCodeDisplay: React.FC<QrCodeDisplayProps> = ({
       <div className="mt-4 flex flex-col items-center gap-1 text-xs text-slate-400">
         <div className="flex items-center gap-1.5 text-indigo-300 font-semibold">
           <QrCode className="w-4 h-4 text-indigo-400 shrink-0" />
-          <span>Scan with Mobile Camera or QR Reader</span>
+          <span>One-Time Scan per Session</span>
         </div>
         <p className="text-[11px] text-slate-500 max-w-xs text-center">
-          Connects via Hotspot or Wi-Fi • Direct P2P transfer with zero cloud bandwidth usage
+          Scan once with your mobile camera. Both devices remain linked for multiple file transfers and clipboard sharing.
         </p>
       </div>
     </div>

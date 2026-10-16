@@ -29,18 +29,31 @@ export function getPusherServer(): PusherServer | null {
 }
 
 /**
- * Dispatches real-time 'new-paste' event to the PC listener.
+ * Dispatches real-time event to the clipboard space channel.
  */
-export async function triggerQuickPasteRealtime(item: QuickPasteItem): Promise<boolean> {
+export async function triggerClipboardEvent(
+  code: string,
+  event: 'new-item' | 'item-action' | 'space-cleared' | 'device-joined' | 'device-left' | 'new-paste',
+  data: any
+): Promise<boolean> {
   const pusher = getPusherServer();
   if (!pusher) return false;
 
   try {
-    const channel = `quick-paste-${item.code.toUpperCase()}`;
-    await pusher.trigger(channel, 'new-paste', item);
+    const cleanCode = code.toUpperCase();
+    await pusher.trigger(`clipboard-space-${cleanCode}`, event, data);
+    // Also trigger legacy event name on legacy channel for backward compatibility
+    await pusher.trigger(`quick-paste-${cleanCode}`, event === 'new-item' ? 'new-paste' : event, data);
     return true;
   } catch (err) {
     console.warn('Pusher real-time trigger failed:', err);
     return false;
   }
+}
+
+/**
+ * Dispatches real-time 'new-paste' event to the PC listener.
+ */
+export async function triggerQuickPasteRealtime(item: QuickPasteItem): Promise<boolean> {
+  return triggerClipboardEvent(item.code, 'new-item', item);
 }
